@@ -676,7 +676,11 @@
   var LABEL_NEAR = 2;       // px of paper between silhouette and letters
   var LABEL_MIN_PX = 9;     // below this the handwriting stops reading
   var LABEL_MAX_PX = 21;
-  var LABEL_ASC = 0.80;     // Caveat's inked em band, above the baseline
+  // Fallback ink band only: textVBand() below measures every name's real
+  // ascent/descent and overrides these two for the one tile it is laying
+  // out. These flat values only fire if that measurement is unsupported
+  // (very old browsers) or before it has run for the first name.
+  var LABEL_ASC = 0.80;     // above the baseline
   var LABEL_DESC = 0.25;    // and below it
   // Most ink one letter-width of a name may sit on: a shade above nothing.
   // Small enough that one sample of one row across one letter refuses the
@@ -838,6 +842,34 @@
       labelEmCache[s] = labelCtx.measureText(s).width / 100;
     }
     return labelEmCache[s];
+  }
+  // Real per-name ink band (how far this exact string's glyphs actually
+  // reach above/below the baseline), in em, replacing the flat LABEL_ASC/
+  // LABEL_DESC guess for the one name being laid out right now. That flat
+  // guess was eyeballed against the library's English names, which carry
+  // no diacritics; a German name with an umlaut (Gruenfink, Moenchsgras-
+  // muecke) sits taller than the guess expects, so the packer reserved
+  // less box than the glyphs actually paint and a neighbour nested into
+  // the dots. Measured the same way as textEm() above - once per string,
+  // cached, and read back at whatever px the caller is trying, because
+  // actualBoundingBox* is exactly linear in font-size too. So this costs
+  // one extra canvas call per distinct bird name per session, not one per
+  // px candidate the search tries - the search loop itself is untouched.
+  // Falls back to the flat constants on a canvas that lacks
+  // actualBoundingBoxAscent/Descent (very old browsers only).
+  var labelVCache = {};
+  function textVBand(s) {
+    var v = labelVCache[s];
+    if (v === undefined) {
+      labelCtx.font = '600 100px Hand, cursive';
+      var m = labelCtx.measureText(s);
+      var asc = m.actualBoundingBoxAscent, desc = m.actualBoundingBoxDescent;
+      v = (isFinite(asc) && isFinite(desc) && (asc > 0 || desc > 0))
+        ? { asc: asc / 100, desc: desc / 100 }
+        : { asc: LABEL_ASC, desc: LABEL_DESC };
+      labelVCache[s] = v;
+    }
+    return v;
   }
   // Label widths are measured against the real face, so the first pack
   // has to wait for it. Otherwise the collage lays out to the fallback's
@@ -1940,12 +1972,23 @@
       // every bird is named. The tangent fallback can carry readable type
       // beyond the silhouette, and the packer reserves that whole label.
       var maxPx = Math.max(LABEL_MIN_PX, labelCap(t.fullW, t.fullH));
+      // Swap in this name's real ink band for the duration of the search
+      // and the two box builders below, then put the flat default back -
+      // planLabel/labelBounds/labelCells all read LABEL_ASC/LABEL_DESC as
+      // module state, and assignLabels runs its tiles one at a time, so a
+      // save/restore around one tile is safe and touches nothing else.
+      var vBand = textVBand(name);
+      var savedAsc = LABEL_ASC, savedDesc = LABEL_DESC;
+      LABEL_ASC = vBand.asc; LABEL_DESC = vBand.desc;
       var plan = planLabel(out, name, t.fullW, t.fullH, maxPx);
+      if (plan) {
+        t.labelPx = plan.px;
+        t.labelRows = plan.rows;
+        t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
+        t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
+      }
+      LABEL_ASC = savedAsc; LABEL_DESC = savedDesc;
       if (!plan) return;
-      t.labelPx = plan.px;
-      t.labelRows = plan.rows;
-      t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
-      t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
     });
   }
 
