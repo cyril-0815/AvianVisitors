@@ -3699,12 +3699,17 @@ body.av-local #dd-items  { display: block; }
 }
 
 /* ============ Collage labels ============ */
-/* Handwritten face (Caveat, OFL - license alongside the font file).
-   Loaded lazily: nothing references 'Hand' until labels are on. The
-   ./fonts/... path resolves through the production webroot link. */
+/* Handwritten face (Indie Flower, OFL - license alongside the font
+   file). Loaded lazily: nothing references 'Hand' until labels are on.
+   The ./fonts/... path resolves through the production webroot link.
+   woff2 first (smaller, all evergreen browsers), woff as a fallback for
+   anything older. Static regular-weight face; the 400 700 range is kept
+   so a caller asking for 600 (see apt.js) still matches this face
+   instead of falling through to the generic 'cursive' fallback. */
 @font-face {
   font-family: 'Hand';
-  src: url('./fonts/Caveat.ttf') format('truetype');
+  src: url('./fonts/IndieFlower.woff2') format('woff2'),
+       url('./fonts/IndieFlower.woff') format('woff');
   font-weight: 400 700;
   font-display: swap;
 }
