@@ -570,7 +570,7 @@
   // the bird-to-bird gap the collage was tuned on while stopping a label from
   // reserving a bird-sized moat of empty paper around itself.
   var COLLAGE_LABEL_PAD = 1;
-  var FLY_PROB = 0.15; // chance a bird shows in its flight pose (rare); perched
+  var FLY_PROB = 0.40; // chance a bird shows in its flight pose; perched
   // otherwise. Rolled once per window appearance.
   var collagePose = {}; // sci -> 1 perched | 2 flight, persisted across polls;
   // cleared when a bird leaves the window so it rerolls.
