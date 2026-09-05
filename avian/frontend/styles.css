@@ -3725,22 +3725,23 @@ body.av-local #dd-items  { display: block; }
    than type set on top of it. Two noises do the work. A fine one shifts the
    contour by about half a pixel, which is the scale of paper tooth, so the
    edge reads as fibre rather than as a wobble; its feature size (1/0.5 = 2px)
-   has to stay above Caveat's widest stroke here, because noise finer than a
-   stroke cuts it instead of moving it. A coarser one, stretched sideways so
-   density drifts ALONG a stroke rather than banding across it, drives the
-   alpha between 0.42 and 0.84.
+   has to stay above Indie Flower's stroke width here (thinner than Caveat's),
+   because noise finer than a stroke cuts it instead of moving it. A coarser
+   one, stretched sideways so density drifts ALONG a stroke rather than
+   banding across it, drives the alpha between an intercept and intercept +
+   slope (see inkFilter() in apt.js for the per-bucket values).
 
-   That ramp is where the lettering's weight now lives, which is why the fill
-   stays a flat var(--ink-soft): mean alpha is the intercept plus half the
-   slope, and it measures 0.63 of the solid fill in both themes, because the
-   filter touches alpha and never colour. Raise the pair to lift the weight;
-   they are the only knob.
+   The fill is a flat var(--ink) (full ink colour, not the soft/muted
+   variant) because the alpha ramp already carries the grain; stacking a
+   muted colour on top of a floor that is already well under 1 read as
+   washed-out rather than as ink. Raise the intercepts to lift the weight
+   further; they are the only knob.
 
    The Spectra 6 panel has six inks and no grey between them, so frame captures
-   keep this exact face but replace the softened fill and filter with solid
+   keep this exact face but replace the textured fill and filter with solid
    black at a lighter weight. */
 .gtile-label text {
-  fill: var(--ink-soft);
+  fill: var(--ink);
   filter: url(#lbl-ink-m);
 }
 .gtile-label text[data-ink="s"] { filter: url(#lbl-ink-s); }

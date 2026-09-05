@@ -611,9 +611,9 @@
   }
   var LABEL_INK_DEFS =
     '<svg class="gtile-label-defs" width="0" height="0" aria-hidden="true">' +
-      inkFilter('lbl-ink-s', '0.45', '0.24', '0.68') +
-      inkFilter('lbl-ink-m', '0.75', '0.34', '0.55') +
-      inkFilter('lbl-ink-l', '1.10', '0.42', '0.42') +
+      inkFilter('lbl-ink-s', '0.45', '0.18', '0.80') +
+      inkFilter('lbl-ink-m', '0.75', '0.22', '0.72') +
+      inkFilter('lbl-ink-l', '1.10', '0.30', '0.62') +
     '</svg>';
   // Which bucket a name falls in. Kept as a function so the render site and
   // any future caller agree on the boundaries.
