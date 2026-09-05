@@ -91,7 +91,8 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 
 <main class="stage">
   <header class="static-head">
-    <button type="button" class="pre" id="aboutLink" data-site-name>your birds</button>
+    <!-- The station-name eyebrow that used to sit here (and opened the
+         about card) was removed on request. -->
     <h1 id="staticTitle" data-i18n="title.heardRecently">Heard Recently</h1>
   </header>
   <div class="views" id="views">
@@ -326,7 +327,9 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
   <i class="seg-pill" aria-hidden="true"></i>
   <button type="button" data-i="0" aria-current="true" data-i18n="nav.collage">collage</button>
   <button type="button" data-i="1" data-i18n="nav.stats">stats</button>
-  <button type="button" data-i="2" data-i18n="nav.atlas">atlas</button>
+  <!-- The atlas button is withdrawn together with ATLAS_ENABLED in
+       apt.js; restoring the view means restoring both:
+       <button type="button" data-i="2" data-i18n="nav.atlas">atlas</button> -->
 </nav>
 
 
@@ -399,6 +402,6 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r215"></script>
+<script src="./apt.js?v=r216"></script>
 </body>
 </html>

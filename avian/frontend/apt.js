@@ -133,17 +133,36 @@
   var SLIDE_MS = 480;
   var SWITCH_LEAD = SLIDE_MS - 100;   // atlas
   var STATS_LEAD = SLIDE_MS - 200;    // stats - begin a touch sooner
+  // ---- Atlas availability ----
+  // The Atlas is withdrawn for now: its family grouping comes from a
+  // genus table written for North America, so European species are filed
+  // under the wrong family and most land in "Other".
+  //
+  // Only the way IN is removed. The atlas grid still renders off-screen,
+  // because the postcard opened from a collage bird or a stats row is
+  // built from its stamp cards. To bring the Atlas back, set this to true
+  // AND restore the third slider button in index.html.
+  var ATLAS_ENABLED = false;
+  // Opening a bird sets the #sci= hash, which used to bring the Atlas
+  // forward behind the postcard. With no Atlas there is nothing to bring
+  // forward and no way back from it, so the postcard opens over whichever
+  // view the visitor is already on.
+  function goAtlas() { if (ATLAS_ENABLED) go(2); }
+
   var VIEW_STORAGE_KEY = 'bird:view';
   function readSavedView() {
     var saved = parseInt(readLS(VIEW_STORAGE_KEY, '0'), 10);
-    return saved >= 0 && saved < VIEW_TITLES.length ? saved : 0;
+    // A visitor who left on the Atlas must not come back to a view that
+    // no longer has a button.
+    var last = ATLAS_ENABLED ? VIEW_TITLES.length - 1 : 1;
+    return saved >= 0 && saved <= last ? saved : 0;
   }
   // Resolve the saved sheet before routing so refreshes land directly on
   // the view the visitor left, without briefly replaying the default view.
   var currentView = readSavedView();
   function go(i, options) {
     options = options || {};
-    i = Math.max(0, Math.min(2, i));
+    i = Math.max(0, Math.min(ATLAS_ENABLED ? 2 : 1, i));
     // Only a genuine view *switch* replays the entrance. go() also fires when
     // a card is expanded (it sets the #sci= hash, which routes through go(2))
     // while already on the atlas - that must not retrigger the load-in.
@@ -492,7 +511,10 @@
   });
 
   // Open-space click advances these segmented toggles to the next option.
-  wireToggleAdvance(slider);
+  // With the Atlas withdrawn the slider has two options, and the
+  // two-option rule (pressing the lit side flips it) would make tapping
+  // the view you are already on jump you off it.
+  if (ATLAS_ENABLED) wireToggleAdvance(slider);
   wireToggleAdvance(winPick);
   if (langPick && !langPick.hidden) wireToggleAdvance(langPick);
   wireToggleAdvance(atlasSortEl);
@@ -2504,6 +2526,7 @@
   // `backwards` fill keeps them hidden during the lead, so there's no flash.
   // In-place re-renders (sort change) pass no lead - they fire immediately.
   function playAtlasEntrance(lead) {
+    if (!ATLAS_ENABLED) return;
     lead = lead || 0;
     var grid = document.getElementById('atlasGrid');
     if (!grid) return;
@@ -2637,7 +2660,7 @@
     var hit = maskHitTest(ev.clientX, ev.clientY);
     if (!hit) return;
     location.hash = '#sci=' + encodeURIComponent(hit.data.sci);
-    go(2);
+    goAtlas();
   });
 
   // Debug hook - call __layout({ slugs, weights, n }) from devtools to
@@ -4581,7 +4604,7 @@
       placeNext();
     }
 
-    if (forced && currentView !== 2) go(2);
+    if (forced && currentView !== 2) goAtlas();
     if (currentView === 2) { setTimeout(play, 850); return; }
     // wait until the atlas is brought forward
     var t = setInterval(function () {
@@ -7389,6 +7412,9 @@
     return decodeURIComponent(m[1]);
   }
   function highlightAtlas(sci) {
+    // The postcard still reads the stamp cards, but scrolling a hidden
+    // view into position would drag the page for no visible reason.
+    if (!ATLAS_ENABLED) return;
     var grid = document.getElementById('atlasGrid');
     if (!grid) return;
     grid.querySelectorAll('.bird-card[data-active="true"]').forEach(function (c) {
@@ -9928,7 +9954,7 @@
 
   // Initial load: if URL has a sci hash, jump to atlas, highlight, and
   // open the modal.
-  if (readHash()) { go(2); highlightAtlas(readHash()); openDetailModal(readHash()); }
+  if (readHash()) { goAtlas(); highlightAtlas(readHash()); openDetailModal(readHash()); }
   // Admin overlay routing accepts only the four native admin sections.
   // screen with that sub-tab. Clearing the hash closes it.
   function readAdminHash() {
@@ -9946,7 +9972,7 @@
     if (location.hash === '#about') openAbout(); else closeAbout();
     if (adm) { openAdmin(adm); return; }
     closeAdmin();
-    if (sci) { go(2); highlightAtlas(sci); openDetailModal(sci); }
+    if (sci) { goAtlas(); highlightAtlas(sci); openDetailModal(sci); }
     else { highlightAtlas(null); closeDetailModal(); }
   }
   if (readAdminHash()) openAdmin(readAdminHash());
@@ -9967,7 +9993,10 @@
       if (location.hash) { location.hash = ''; } else { closeAbout(); }
     }
   });
-  document.getElementById('aboutLink').addEventListener('click', function () {
+  // The masthead eyebrow that opened this card was removed; /#about
+  // still works as a direct link.
+  var aboutLink = document.getElementById('aboutLink');
+  if (aboutLink) aboutLink.addEventListener('click', function () {
     location.hash = '#about';
   });
 
@@ -10622,7 +10651,7 @@
       location.hash = '#sci=' + encodeURIComponent(sci);
     } else {
       // Same hash -> still re-highlight (the user clicked it again).
-      go(2); highlightAtlas(sci);
+      goAtlas(); highlightAtlas(sci);
     }
   }
 

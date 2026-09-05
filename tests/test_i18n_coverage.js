@@ -211,4 +211,29 @@ check(html.indexOf('id="langPick"') < html.indexOf('class="menu-shell"'),
 check(/if \(I18N\.pinned\) \{\s*langPick\.hidden = true;/.test(apt),
   'a pinned language hides the switch, so the kiosk screen stays clean');
 
+/* ---- the navigation and the code agree on which views exist ----
+   The Atlas is currently withdrawn, which takes two edits: the flag in
+   apt.js and the button in index.html. Restoring only one of them leaves
+   either a dead button or an unreachable view, so check they match. */
+const atlasEnabled = /var ATLAS_ENABLED = (true|false);/.exec(apt);
+check(!!atlasEnabled, 'apt.js declares whether the Atlas is available');
+// The withdrawn button is kept in a comment as the restore recipe, so
+// the live markup is what counts here.
+const liveHtml = html.replace(/<!--[\s\S]*?-->/g, '');
+const atlasButton = /<button[^>]*data-i="2"/.test(liveHtml);
+check((atlasEnabled[1] === 'true') === atlasButton,
+  atlasEnabled[1] === 'true'
+    ? 'ATLAS_ENABLED is true but index.html has no atlas button'
+    : 'ATLAS_ENABLED is false but index.html still offers the atlas button');
+if (atlasEnabled[1] === 'false') {
+  check(/function goAtlas\(\) \{ if \(ATLAS_ENABLED\) go\(2\); \}/.test(apt),
+    'routes into the Atlas go through the guarded helper');
+  // Comments explain the old routing; only real calls matter.
+  const aptCode = apt
+    .replace('function goAtlas() { if (ATLAS_ENABLED) go(2); }', '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  check(!/[^A-Za-z]go\(2\)/.test(aptCode),
+    'no route calls go(2) directly while the Atlas is withdrawn');
+}
+
 process.stdout.write('i18n coverage tests passed (' + checks + ' checks)\n');
