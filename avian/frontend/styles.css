@@ -217,6 +217,16 @@
   }
   .top .window-pick button:hover { color: var(--ink); }
   .top .window-pick button[aria-current="true"] { color: var(--ink); }
+  /* The header carries two pills now: the time window and, beside it,
+     the public language switch. Both stay on the left so the fixed menu
+     button in the opposite corner is never crowded. The language pill
+     reuses .window-pick wholesale and only tightens its measure - three
+     two-letter options, not five time spans.
+     [hidden] alone cannot win against .top .window-pick's display, so the
+     kiosk case (?lang= pinned, switch removed) needs its own rule. */
+  .top { gap: 10px; justify-content: flex-start; }
+  .top .lang-pick[hidden] { display: none; }
+  .top .lang-pick button { padding: 9px 12px; }
   .menu-btn {
     background: var(--paper); border: 0; color: var(--ink);
     font: 11px/1 ui-monospace, Menlo, monospace; padding: 0 14px;
@@ -236,11 +246,14 @@
     .top .window-pick button {
       font-size: 8.5px; padding: 6px 10px; letter-spacing: 0.12em;
     }
+    .top { gap: 6px; }
+    .top .lang-pick button { padding: 6px 7px; letter-spacing: 0.08em; }
     .menu-btn { font-size: 9px; padding: 0 11px; letter-spacing: 0.14em; }
     .return-to-atlas { top: 10px; left: 10px; padding: 0 10px; font-size: 8.5px; }
   }
   @media (max-width: 420px) {
     .top .window-pick button { font-size: 8px; padding: 5px 7px; letter-spacing: 0.08em; }
+    .top .lang-pick button { padding: 5px 5px; letter-spacing: 0.04em; }
   }
 
   /* ============ Bottom slider - recessed track, raised active pill ============ */

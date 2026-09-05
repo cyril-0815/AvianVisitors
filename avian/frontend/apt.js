@@ -1,4 +1,18 @@
 (function () {
+  // ---- i18n bridge ----
+  // i18n.js loads before this file, so window.I18N is always present in
+  // the browser; the guarded fallbacks keep apt.js loadable on its own
+  // (unit tests, and a stale cached index.html that predates i18n.js).
+  // Only the public surfaces below use these. The admin overlays
+  // (settings / system / logs / tools) stay English by design.
+  var I18N = window.I18N;
+  function T(key, vars) { return I18N ? I18N.t(key, vars) : key; }
+  function TP(key, n, vars) { return I18N ? I18N.plural(key, n, vars) : key; }
+  function TFAM(name) { return I18N ? I18N.familyLabel(name) : name; }
+  // undefined = the browser's own locale, which is what this file used
+  // before the language picker existed.
+  function TLOC() { return I18N ? I18N.locale() : undefined; }
+  var LANG = I18N ? I18N.lang : 'en';
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
   // Library-wide revision for a full offline sketch rebuild. One-species
   // corrections use ART_REVISIONS below.
@@ -82,8 +96,8 @@
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
   // stays put with no fade (collage and stats both say Heard Recently).
-  var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Avian Atlas'];
-  var EMPTY_WINDOW_COPY = 'no detections heard in this window';
+  var VIEW_TITLES = [T('title.heardRecently'), T('title.heardRecently'), T('title.avianAtlas')];
+  var EMPTY_WINDOW_COPY = T('empty.window');
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
   function applySiteName(value) {
@@ -416,6 +430,46 @@
     });
   });
 
+  // ---- Language picker ----
+  // Public control, deliberately outside the admin menu: the menu shows
+  // nothing but the admin password until it is unlocked. Hidden entirely
+  // when ?lang= pins the language, which is how the kiosk display runs.
+  var langPick = document.getElementById('langPick');
+  if (langPick && I18N) {
+    if (I18N.pinned) {
+      langPick.hidden = true;
+    } else {
+      langPick.hidden = false;
+      var langBtns = [].slice.call(langPick.querySelectorAll('button'));
+      langBtns.forEach(function (b) {
+        b.setAttribute('aria-current', b.dataset.lang === LANG ? 'true' : 'false');
+      });
+      langBtns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (b.dataset.lang === LANG) return;
+          langBtns.forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
+          syncPill(langPick);
+          // setLang() reloads. Everything on screen - the collage, the
+          // atlas, the stamps and every API payload - carries language,
+          // and re-deriving all of it in place would mean a second
+          // rendering path to keep correct forever.
+          I18N.setLang(b.dataset.lang);
+        });
+      });
+    }
+  }
+
+  // Weekday initials in the stats calendar are letters, not dates, so
+  // they cannot come from toLocaleDateString.
+  (function () {
+    var week = document.getElementById('statsCalendarWeek');
+    if (!week || !I18N) return;
+    var letters = I18N.weekdayLetters();
+    var cells = week.querySelectorAll('span');
+    if (letters.length !== cells.length) return;
+    cells.forEach(function (cell, i) { cell.textContent = letters[i]; });
+  })();
+
   // Initial pill placement (after layout settles) + on resize.
   // Atlas sort segmented control - same pill-on-recess pattern.
   var atlasSortEl = document.getElementById('atlasSort');
@@ -440,10 +494,12 @@
   // Open-space click advances these segmented toggles to the next option.
   wireToggleAdvance(slider);
   wireToggleAdvance(winPick);
+  if (langPick && !langPick.hidden) wireToggleAdvance(langPick);
   wireToggleAdvance(atlasSortEl);
   wireToggleAdvance(document.getElementById('modalPoseToggle'));
   function syncAllPills() {
     syncPill(slider); syncPill(winPick);
+    if (langPick && !langPick.hidden) syncPill(langPick);
     if (atlasSortEl) syncPill(atlasSortEl);
     var cp = document.getElementById('chartPick');
     if (cp) syncPill(cp);
@@ -2343,7 +2399,7 @@
       // detections in a session; "heard" implies distinct individuals.
       var titleN = +s.n || 0;
       btn.title = (s.com || s.sci) + ' - ' + fmtN(titleN) + ' ' +
-        (titleN === 1 ? 'call' : 'calls') + ' ' + windowLabel(currentHours);
+        TP('collage.call', titleN) + ' ' + windowLabel(currentHours);
       btn.style.left = r.x + 'px';
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
@@ -2560,7 +2616,7 @@
       if (hit && !labelsOn()) {
         var s = hit.data;
         var n = +s.n || 0;
-        var noun = (n === 1) ? 'call' : 'calls';
+        var noun = TP('collage.call', n);
         tip.innerHTML = '<span class="ct-name">' + (s.com || s.sci) + '</span>'
           + '<span class="ct-w"> - </span>'
           + '<span class="ct-n">' + fmtN(n) + '</span>'
@@ -2637,30 +2693,30 @@
   function fmtN(n) {
     if (n == null) return '-';
     if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
-    return n.toLocaleString();
+    return n.toLocaleString(TLOC());
   }
   // Compact count for atlas cards (1K, 1.2K); the modal keeps the exact number.
   function fmtNK(n) {
     if (n == null) return '-';
-    return n < 1000 ? n.toLocaleString() : +(n / 1000).toFixed(1) + 'K';
+    return n < 1000 ? n.toLocaleString(TLOC()) : +(n / 1000).toFixed(1) + 'K';
   }
   // Human label for the current time-window picker selection - replaces
   // a bare "window" with the span it actually covers. Thresholds match
   // the winPick buttons (1H / 12H / 24H / 7D / ALL).
   function windowLabel(h) {
-    if (h <= 1) return 'this hour';
-    if (h <= 12) return 'past 12h';
-    if (h <= 24) return 'today';
-    if (h <= 168) return 'this week';
-    return 'all time';
+    if (h <= 1) return T('window.thisHour');
+    if (h <= 12) return T('window.past12h');
+    if (h <= 24) return T('window.today');
+    if (h <= 168) return T('window.thisWeek');
+    return T('window.allTime');
   }
   function statsWindowLabel(h) {
     if (!hourlyDate) return windowLabel(h);
-    if (h <= 1) return 'selected hour';
-    if (h <= 12) return 'final 12h';
-    if (h <= 24) return 'selected day';
-    if (h <= 168) return 'selected 7 days';
-    return 'through selected day';
+    if (h <= 1) return T('window.selectedHour');
+    if (h <= 12) return T('window.final12h');
+    if (h <= 24) return T('window.selectedDay');
+    if (h <= 168) return T('window.selected7Days');
+    return T('window.throughSelectedDay');
   }
 
   // ---- Live Pi data layer ----
@@ -2689,8 +2745,17 @@
   // Map sci -> all-time detection count, populated from lifelist for atlas.
   var speciesTotals = {};
 
+  // Species names come back resolved for the chosen language, looked up
+  // from the scientific name against BirdNET-Pi's own label files. The
+  // parameter always travels, including for English: the database stores
+  // whatever DATABASE_LANG was set to when a bird was heard, which is not
+  // necessarily the language on screen.
+  function withLang(url) {
+    if (String(url).indexOf('birdnet-api.php') < 0) return url;
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'lang=' + encodeURIComponent(LANG);
+  }
   function fetchJson(url) {
-    return fetch(url, { cache: 'no-store' })
+    return fetch(withLang(url), { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
   }
 
@@ -2798,7 +2863,7 @@
       var p2 = function (n) { return n < 10 ? '0' + n : '' + n; };
       if (currentHours <= 36) return p2(d.getHours()) + ':' + p2(d.getMinutes());
       if (currentHours <= 75 * 24) return (d.getMonth() + 1) + '/' + d.getDate();
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return d.toLocaleDateString(TLOC(), { month: 'short', day: 'numeric' });
     }
 
     // Faint gridlines at every column boundary. Start at gi=1: the gi=0
@@ -2834,7 +2899,7 @@
     });
 
     var note = trimmed
-      ? '<div class="stats-tl-cap">' + C + ' most-heard of ' + all.length + '</div>'
+      ? '<div class="stats-tl-cap">' + escHtml(T('stats.mostHeardOf', { n: C, total: all.length })) + '</div>'
       : '';
     tl.innerHTML =
       '<div class="stats-tl-yaxis">' + yaxis + '</div>'
@@ -2889,16 +2954,16 @@
     var byPeriodCap = document.getElementById('statsByPeriodCap');
     var firstSeenCap = document.getElementById('statsFirstSeenCap');
     if (byPeriodCap) byPeriodCap.textContent = past
-      ? 'detections through ' + shortStatsDate(stats.date)
-      : 'detections, grouped by recency';
+      ? T('stats.byPeriodCapPast', { date: shortStatsDate(stats.date) })
+      : T('stats.byPeriodCap');
     if (firstSeenCap) firstSeenCap.textContent = past
-      ? 'life list as of ' + shortStatsDate(stats.date)
-      : 'newest additions to the life list';
+      ? T('stats.firstDetectionsCapPast', { date: shortStatsDate(stats.date) })
+      : T('stats.firstDetectionsCap');
     document.getElementById('statsByPeriod').innerHTML =
-      liRow(past ? 'HOUR' : 'NOW', past ? 'final hour' : 'last hour', fmtN(last_hour))
-      + liRow(past ? 'DAY' : 'TODAY', past ? 'selected date' : 'today', fmtN(today_det))
-      + liRow('7D', past ? 'through this date' : 'last 7 days', fmtN(week_det))
-      + liRow('ALL', past ? 'through this date' : 'all time', fmtN(all_det));
+      liRow(past ? T('stats.row.hour') : T('stats.row.now'), past ? T('stats.row.finalHour') : T('stats.row.lastHour'), fmtN(last_hour))
+      + liRow(past ? T('stats.row.day') : T('stats.row.today'), past ? T('stats.row.selectedDate') : T('stats.row.todayLabel'), fmtN(today_det))
+      + liRow(T('stats.row.week'), past ? T('stats.row.throughThisDate') : T('stats.row.last7days'), fmtN(week_det))
+      + liRow(T('stats.row.all'), past ? T('stats.row.throughThisDate') : T('stats.row.allTime'), fmtN(all_det));
 
     // Top Species - top 5 species in the current window. ./avian/api/birdnet-api.php?action=recent
     // already returns species sorted by last_seen DESC; re-sort by count.
@@ -2910,7 +2975,7 @@
       ? ranked.map(function (s, i) { return liRow(pad(i + 1), s.com, fmtN(+s.n), s.sci); }).join('')
       : '<li class="stats-window-empty"><span class="window-empty">' + EMPTY_WINDOW_COPY + '</span></li>';
     document.getElementById('statsTopSpecCap').textContent =
-      'most-heard, ' + statsWindowLabel(currentHours);
+      T('stats.topSpeciesCap', { window: statsWindowLabel(currentHours) });
 
     // First Detections - newest additions to the life list, with a
     // "Xd ago" label computed from first_seen.
@@ -2923,11 +2988,13 @@
         var label = '-';
         if (!isNaN(t)) {
           var daysAgo = Math.floor((now - t) / 86400000);
-          label = daysAgo === 0 ? (past ? 'that day' : 'today') : daysAgo + (past ? 'd prior' : 'd ago');
+          label = daysAgo === 0
+            ? (past ? T('stats.thatDay') : T('stats.today'))
+            : T(past ? 'stats.daysPrior' : 'stats.daysAgo', { n: daysAgo });
         }
         return liRow(label, s.com, '', s.sci);
       }).join('')
-      : liRow('-', 'no detections yet', '');
+      : liRow('-', T('stats.noDetectionsYet'), '');
   }
 
   // ---- Day's Rhythm + hourly ledger ----
@@ -3095,19 +3162,19 @@
     var cap = document.getElementById('statsRhythmCap');
     if (title && cap) {
       if (r && r.mode === 'week') {
-        title.textContent = "Week's Rhythm";
-        cap.textContent = 'average day in this 7-day window, over the previous 7 days';
+        title.textContent = T('rhythm.week');
+        cap.textContent = T('rhythm.weekCap');
       } else if (currentHours <= 1) {
-        title.textContent = "Hour's Rhythm";
-        cap.textContent = 'detections through the selected hour, over the prior week\'s average';
+        title.textContent = T('rhythm.hour');
+        cap.textContent = T('rhythm.hourCap');
       } else if (!hourlyDate && DATA.stats && DATA.stats.is_today && currentHours < 1000000) {
-        title.textContent = "Today's Rhythm";
+        title.textContent = T('rhythm.today');
         cap.textContent = currentHours <= 12
-          ? 'detections through the current 12-hour window, over last week\'s average'
-          : 'detections through the day, over last week\'s average';
+          ? T('rhythm.today12hCap')
+          : T('rhythm.todayCap');
       } else {
-        title.textContent = "Day's Rhythm";
-        cap.textContent = 'detections on the selected date, over the prior week\'s average';
+        title.textContent = T('rhythm.day');
+        cap.textContent = T('rhythm.dayCap');
       }
     }
     if (!r || (!(r.today || []).length && !(r.avg || []).length)) {
@@ -3213,7 +3280,7 @@
     if (!d || isNaN(d.getTime())) return String(s || 'today');
     var opts = { month: 'short', day: 'numeric' };
     if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    return d.toLocaleDateString(undefined, opts);
+    return d.toLocaleDateString(TLOC(), opts);
   }
   function stationToday() {
     return (DATA.stats && DATA.stats.station_date)
@@ -3236,8 +3303,10 @@
     }
     var date = statsDateOnScreen();
     var today = stationToday();
-    label.textContent = date === today && !hourlyDate ? 'today' : shortStatsDate(date);
-    label.setAttribute('aria-label', 'Choose stats date, ' + (date === today ? 'today' : shortStatsDate(date)));
+    label.textContent = date === today && !hourlyDate ? T('cal.today') : shortStatsDate(date);
+    label.setAttribute('aria-label', T('cal.chooseDateWith', {
+      date: date === today ? T('cal.today') : shortStatsDate(date)
+    }));
     next.disabled = !hourlyDate || date >= today;
   }
   function isoLocalDate(d) {
@@ -3290,17 +3359,17 @@
     var firstHeard = (DATA.calendar || {}).first_date || null;
     var lastHeard = (DATA.calendar || {}).last_date || null;
     var counts = statsDateCounts();
-    title.textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    title.textContent = first.toLocaleDateString(TLOC(), { month: 'long', year: 'numeric' });
     var html = '';
     for (var blank = 0; blank < first.getDay(); blank++) html += '<span aria-hidden="true"></span>';
     for (var day = 1; day <= total; day++) {
       var date = isoLocalDate(new Date(year, month, day));
       var count = counts[date] || 0;
       var disabled = date > today || (firstHeard && date < firstHeard);
-      var readable = new Date(year, month, day).toLocaleDateString(undefined, {
+      var readable = new Date(year, month, day).toLocaleDateString(TLOC(), {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
       });
-      var aria = readable + (count ? ', ' + count + ' detection' + (count === 1 ? '' : 's') : ', no detections');
+      var aria = readable + ', ' + (count ? TP('cal.detections', count) : T('cal.noDetections'));
       html += '<button type="button" role="gridcell" data-date="' + date + '"'
         + (count ? ' class="has-data' + (date === today ? ' is-today' : '') + '"' : (date === today ? ' class="is-today"' : ''))
         + ' aria-label="' + aria + '" aria-selected="' + (date === selected ? 'true' : 'false') + '"'
@@ -3414,7 +3483,7 @@
       // bottom edge travels. The nested flex chain resists height:auto, so set
       // the height that fits outright, from the row count.
       note.hidden = false;
-      note.textContent = 'Show less';
+      note.textContent = T('heatmap.showLess');
       wrap.removeAttribute('data-more');
       if (chart) {
         chart.classList.add('rh-grow');
@@ -3457,7 +3526,7 @@
       body.deleteRow(body.rows.length - 1);
     }
     note.hidden = false;
-    note.textContent = 'Show more';
+    note.textContent = T('heatmap.showMore');
     // Fade the last visible row into paper so the cut edge reads as "more
     // below" rather than a hard stop; the styles.css mask keys off this.
     wrap.setAttribute('data-more', '1');
@@ -4694,8 +4763,7 @@
     recent.forEach(function (s) { winBySci[s.sci] = +s.n; });
 
     if (!lifelist.length) {
-      showAtlasEmpty('No birds detected yet.',
-        'The atlas fills up as BirdNET-Pi identifies new species.');
+      showAtlasEmpty(T('atlas.emptyTitle'), T('atlas.emptyHint'));
       return;
     }
 
@@ -4830,8 +4898,8 @@
       function flush() {
         if (!run.length) return;
         out += '<section class="fam-block">'
-             + '<h2 class="atlas-fam"><span>' + escHtml(cur) + '</span><i></i>'
-             + '<em>' + run.length + ' species</em></h2>'
+             + '<h2 class="atlas-fam"><span>' + escHtml(TFAM(cur)) + '</span><i></i>'
+             + '<em>' + escHtml(TP('atlas.speciesCount', run.length)) + '</em></h2>'
              + '<div class="atlas-fam-grid">' + run.join('') + '</div></section>';
         run = [];
       }
@@ -7357,18 +7425,24 @@
     if (isNaN(date.getTime())) return d + ' ' + (t || '');
     var now = Date.now();
     var ago = Math.floor((now - date.getTime()) / 1000);
-    if (ago < 60) return ago + 's ago';
-    if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
-    if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
-    return Math.floor(ago / 86400) + 'd ago';
+    if (ago < 60) return T('ago.seconds', { n: ago });
+    if (ago < 3600) return T('ago.minutes', { n: Math.floor(ago / 60) });
+    if (ago < 86400) return T('ago.hours', { n: Math.floor(ago / 3600) });
+    return T('ago.days', { n: Math.floor(ago / 86400) });
   }
   function fmtDateLine(d, t) {
     if (!d) return '';
     try {
       var date = new Date(d + 'T' + (t || '00:00:00'));
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      return date.toLocaleDateString(TLOC(), { month: 'short', day: 'numeric' }) +
         ' - ' + (t ? t.slice(0, 5) : '');
     } catch (e) { return d + ' ' + (t || ''); }
+  }
+  // rarityLabel() returns an English key: 'rare' also drives a CSS class,
+  // and the key must stay stable across languages. rarityText() is the
+  // display form.
+  function rarityText(key) {
+    return key === '-' ? '-' : T('rarity.' + key);
   }
   function rarityLabel(total, firstSeenIso) {
     if (!total) return '-';
@@ -7399,7 +7473,7 @@
     if (!button) return;
     if (playing) button.setAttribute('data-active', 'true');
     else button.removeAttribute('data-active');
-    button.setAttribute('aria-label', playing ? 'Pause recording' : 'Play recording');
+    button.setAttribute('aria-label', playing ? T('pc.pause') : T('pc.play'));
     button.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
   }
   function setRecordingPosition(row, pct, arm) {
@@ -7418,8 +7492,8 @@
     if (slider) {
       slider.setAttribute('aria-valuenow', String(Math.round(pct * 100)));
       slider.setAttribute('aria-valuetext', duration
-        ? fmtAudioTime(pct * duration) + ' of ' + fmtAudioTime(duration)
-        : Math.round(pct * 100) + ' percent');
+        ? T('pc.ofDuration', { pos: fmtAudioTime(pct * duration), total: fmtAudioTime(duration) })
+        : T('pc.percent', { n: Math.round(pct * 100) }));
     }
     var time = strip.querySelector('.rec-player-time');
     if (time) time.textContent = fmtAudioTime(pct * duration) + ' / ' + (duration ? fmtAudioTime(duration) : '--:--');
@@ -7459,12 +7533,12 @@
       var duration = +(row.dataset.audioDuration || 0);
       handle.setAttribute('aria-valuetext', duration
         ? fmtAudioTime(value * duration)
-        : Math.round(value * 100) + ' percent');
+        : T('pc.percent', { n: Math.round(value * 100) }));
       handle.tabIndex = enabled ? 0 : -1;
     });
     if (button) {
       button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-      button.setAttribute('aria-label', enabled ? 'Stop repeating selected section' : 'Repeat a selected section');
+      button.setAttribute('aria-label', enabled ? T('pc.loopOff') : T('pc.loopOn'));
     }
   }
   function setLoopEnabled(row, enabled) {
@@ -7588,8 +7662,8 @@
     var interrupted = activeGenerate && activeGenerate.btn === btn
       && activeGenerate.stillThere();
     genBtnState(btn, interrupted
-      ? 'unlock in menu to check progress'
-      : 'unlock in menu to generate', false);
+      ? T('pc.unlockToCheck')
+      : T('pc.unlockToGenerate'), false);
   }
   function resumeVisibleGenerateAfterAuth() {
     var btn = document.getElementById('modalGenerate');
@@ -7603,7 +7677,7 @@
     }
     activeGenerate = null;
     if (/^unlock in menu/.test(btn.textContent || '')) {
-      genBtnState(btn, 'generate image', false);
+      genBtnState(btn, T('pc.generate'), false);
     }
   }
   function finishActiveGenerate(job) {
@@ -7632,16 +7706,16 @@
         onDone();
       } else {
         finishActiveGenerate(job);
-        genBtnState(btn, 'failed, try again', false);
+        genBtnState(btn, T('pc.genFailed'), false);
       }
     }).catch(function (error) {
       if (activeGenerate !== job) return;
       if (adminAuthCancelled(error)) {
-        if (stillThere()) genBtnState(btn, 'unlock in menu to check progress', false);
+        if (stillThere()) genBtnState(btn, T('pc.unlockToCheck'), false);
         return;
       }
       finishActiveGenerate(job);
-      if (stillThere()) genBtnState(btn, 'failed, try again', false);
+      if (stillThere()) genBtnState(btn, T('pc.genFailed'), false);
     });
   }
   // Kick a postcard generation off and follow it. Only one job runs on the Pi
@@ -7655,7 +7729,7 @@
       loadTables(true);
     };
     if (adminAccessState !== 'unlocked') {
-      genBtnState(btn, 'unlock in menu to generate', false);
+      genBtnState(btn, T('pc.unlockToGenerate'), false);
       openDd();
       focusEl(document.getElementById('lockPass'));
       return;
@@ -7677,7 +7751,7 @@
             return;
           }
           finishActiveGenerate(job);
-          genBtnState(btn, why === 'no gemini key' ? 'add a gemini key in settings' : why, false);
+          genBtnState(btn, why === 'no gemini key' ? T('pc.genNoKey') : why, false);
           return;
         }
         watchGenerate(btn, sci, stillThere, onDone, job);
@@ -7685,11 +7759,11 @@
       .catch(function (error) {
         if (activeGenerate !== job) return;
         if (adminAuthCancelled(error)) {
-          if (stillThere()) genBtnState(btn, 'unlock in menu to check progress', false);
+          if (stillThere()) genBtnState(btn, T('pc.unlockToCheck'), false);
           return;
         }
         finishActiveGenerate(job);
-        if (stillThere()) genBtnState(btn, 'failed, try again', false);
+        if (stillThere()) genBtnState(btn, T('pc.genFailed'), false);
       });
   }
   (function wireGenerate() {
@@ -7716,7 +7790,7 @@
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
             img.src = './nest-eggs.webp';
             img.dataset.sci = sci;
-            img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+            img.alt = T('pc.altUnavailable', { sci: sci });
             img.classList.remove('is-loading');
             return;
           }
@@ -7973,7 +8047,7 @@
     if (genBtn) {
       genBtn.hidden = !needsArt;
       if (needsArt) genBtnState(genBtn,
-        adminAccessState === 'unlocked' ? 'generate image' : 'unlock in menu to generate',
+        adminAccessState === 'unlocked' ? T('pc.generate') : T('pc.unlockToGenerate'),
         false);
     }
 
@@ -7981,7 +8055,7 @@
     if (needsArt) {
       img.src = './nest-eggs.webp';
       img.dataset.sci = sci;
-      img.alt = 'Nest with eggs, bird image not generated yet for ' + sci;
+      img.alt = T('pc.altNotGenerated', { sci: sci });
       img.classList.remove('is-loading');
       imageReady = Promise.resolve();
     } else {
@@ -8015,7 +8089,7 @@
           if (artwork) artwork.setAttribute('data-art-state', 'fallback');
           img.src = './nest-eggs.webp';
           img.dataset.sci = sci;
-          img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+          img.alt = T('pc.altUnavailable', { sci: sci });
           img.classList.remove('is-loading');
           return;
         }
@@ -8045,7 +8119,7 @@
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
             img.src = './nest-eggs.webp';
             img.dataset.sci = sci;
-            img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
+            img.alt = T('pc.altUnavailable', { sci: sci });
             img.classList.remove('is-loading');
             return;
           }
@@ -8076,11 +8150,11 @@
     document.getElementById('modalFirstSeen').textContent = '-';
     document.getElementById('modalRarity').textContent = '-';
     document.getElementById('modalRarity').classList.remove('rare');
-    document.getElementById('modalDesc').textContent = 'Loading description...';
+    document.getElementById('modalDesc').textContent = T('pc.loadingDesc');
     document.getElementById('modalDesc').classList.add('placeholder');
     var previousDistinctive = document.querySelector('.postcard-about .about-distinctive');
     if (previousDistinctive) previousDistinctive.remove();
-    document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Loading recordings...</li>';
+    document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">' + escHtml(T('pc.loadingRecs')) + '</li>';
     document.getElementById('modalRecCount').textContent = '';
     document.getElementById('modalWiki').href = wikiUrl(sci);
     var ebirdLink = document.getElementById('modalEbird');
@@ -8102,14 +8176,14 @@
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var s = j.summary || {};
       document.getElementById('modalCommon').textContent = s.com || sci;
-      document.getElementById('modalAllTime').textContent = (+s.total || 0).toLocaleString();
+      document.getElementById('modalAllTime').textContent = (+s.total || 0).toLocaleString(TLOC());
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(+s.total || 0, s.first_seen);
       var rarEl = document.getElementById('modalRarity');
-      rarEl.textContent = rar;
+      rarEl.textContent = rarityText(rar);
       if (rar === 'rare') rarEl.classList.add('rare');
       var dets = j.detections || [];
-      document.getElementById('modalRecCount').textContent = dets.length + (dets.length === 1 ? ' recording' : ' recordings');
+      document.getElementById('modalRecCount').textContent = TP('pc.recCount', dets.length);
       document.getElementById('modalRecordings').innerHTML = dets.length
         ? dets.map(function (d) {
           return '<li class="rec-row" data-file="' + escHtml(d.file || '') + '" data-date="' + escHtml(d.d || '') + '">'
@@ -8119,26 +8193,26 @@
             + '<span class="date-time"><b>' + fmtDateLine(d.d, d.t) + '</b></span>'
             + '</button>'
             + '<div class="rec-spectro" aria-hidden="true">'
-            + '<div class="rec-spectro-loading">loading spectrogram...</div>'
+            + '<div class="rec-spectro-loading">' + escHtml(T('pc.loadingSpectro')) + '</div>'
             + '<div class="rec-spectro-played"></div>'
             + '<div class="rec-loop-region" aria-hidden="true"></div>'
             + '<div class="rec-spectro-cursor"></div>'
-            + '<div class="rec-spectro-scrub" role="slider" aria-label="Scrub recording spectrogram" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div>'
-            + '<button class="rec-loop-handle" data-edge="start" type="button" role="slider" aria-label="Repeat section start" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="-1"></button>'
-            + '<button class="rec-loop-handle" data-edge="end" type="button" role="slider" aria-label="Repeat section end" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25" tabindex="-1"></button>'
+            + '<div class="rec-spectro-scrub" role="slider" aria-label="' + escHtml(T('pc.scrub')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div>'
+            + '<button class="rec-loop-handle" data-edge="start" type="button" role="slider" aria-label="' + escHtml(T('pc.loopStart')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="-1"></button>'
+            + '<button class="rec-loop-handle" data-edge="end" type="button" role="slider" aria-label="' + escHtml(T('pc.loopEnd')) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="25" tabindex="-1"></button>'
             + '<div class="rec-player-controls">'
-            + '<button class="rec-player-toggle" type="button" aria-label="Play recording">' + ICON_PLAY + '</button>'
+            + '<button class="rec-player-toggle" type="button" aria-label="' + escHtml(T('pc.play')) + '">' + ICON_PLAY + '</button>'
             + '<span class="rec-player-time" aria-hidden="true">0:00 / --:--</span>'
-            + '<button class="rec-loop-toggle" type="button" aria-label="Repeat a selected section" aria-pressed="false">' + ICON_LOOP + '<span>loop</span></button>'
+            + '<button class="rec-loop-toggle" type="button" aria-label="' + escHtml(T('pc.loopOn')) + '" aria-pressed="false">' + ICON_LOOP + '<span>' + escHtml(T('pc.loop')) + '</span></button>'
             + '</div>'
             + '</div>'
             + '</li>';
         }).join('')
-        : '<li class="rec-empty">No recordings yet.</li>';
+        : '<li class="rec-empty">' + escHtml(T('pc.noRecs')) + '</li>';
       document.getElementById('modalRecordings').scrollTop = 0;
     }).catch(function () {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
-      document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">Failed to load recordings.</li>';
+      document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">' + escHtml(T('pc.recsFailed')) + '</li>';
     });
 
     // Wikipedia lead (description + genus / family). `format=6` deliberately
@@ -8158,7 +8232,7 @@
     }).catch(function () {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var desc = document.getElementById('modalDesc');
-      desc.textContent = 'No description available.';
+      desc.textContent = T('pc.noDesc');
       desc.classList.add('placeholder');
     });
     return imageReady;
@@ -8305,7 +8379,7 @@
     var existingDistinctive = aboutBody && aboutBody.querySelector('.about-distinctive');
     if (existingDistinctive) existingDistinctive.remove();
     if (!paragraphs.length) {
-      desc.textContent = 'No description available.';
+      desc.textContent = T('pc.noDesc');
       desc.classList.add('placeholder');
       return;
     }

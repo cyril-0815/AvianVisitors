@@ -60,6 +60,128 @@ function publicSiteName(string $path): string {
     return $value !== '' ? $value : 'BirdNET-Pi';
 }
 
+/* ============================================================
+   Species names in the visitor's language.
+
+   birds.db stores Com_Name as it was at detection time, in whatever
+   DATABASE_LANG the station ran under back then. Sci_Name is stable, so
+   the display name is resolved from it at read time against BirdNET-Pi's
+   own translation tables (model/l18n/labels_<lang>.json, 7058 species,
+   36 languages). Nothing in the database is rewritten and no migration
+   is needed; an unknown species or a missing table simply keeps the
+   stored name.
+   ============================================================ */
+
+/* Two-letter tag, optionally with a region, in the casing the label
+   files use: "de", "zh_CN". Anything else is not a language tag. */
+function avianNormalizeLang(string $lang): string {
+    if (preg_match('/^([A-Za-z]{2})(?:_([A-Za-z]{2}))?$/', $lang, $m) !== 1) return '';
+    return strtolower($m[1]) . (isset($m[2]) ? '_' . strtoupper($m[2]) : '');
+}
+
+function avianLabelPath(string $lang): string {
+    $tag = avianNormalizeLang($lang);
+    if ($tag === '') return '';
+    $dir = dirname(__DIR__, 2) . '/model/l18n';
+    $path = $dir . '/labels_' . $tag . '.json';
+    $real = realpath($path);
+    $realDir = realpath($dir);
+    if ($real === false || $realDir === false) return '';
+    // Belt and braces: the pattern above already forbids traversal.
+    if (strncmp($real, $realDir . DIRECTORY_SEPARATOR, strlen($realDir) + 1) !== 0) return '';
+    return $real;
+}
+
+function avianRequestedLang(): string {
+    $tag = avianNormalizeLang((string)($_GET['lang'] ?? ''));
+    if ($tag === '') return '';
+    return avianLabelPath($tag) !== '' ? $tag : '';
+}
+
+/* One species, looked up in the raw file text.
+
+   json_decode() on the whole table would allocate 7058 entries per
+   request. A station has heard a few dozen species, and the Pi 3 A+ pays
+   for every millisecond and megabyte, so the needed keys are picked out
+   of the raw text instead. Scientific names are ASCII binomials and the
+   tables are plain UTF-8 with no \u escapes, so a direct match is sound;
+   the value is still decoded as JSON so escapes are handled properly. */
+function avianLookupName(string $raw, string $sci): string {
+    if ($sci === '') return '';
+    $pattern = '/"' . preg_quote($sci, '/') . '"\s*:\s*("(?:[^"\\\\]|\\\\.)*")/';
+    if (preg_match($pattern, $raw, $match) !== 1) return '';
+    $decoded = json_decode($match[1]);
+    return is_string($decoded) ? $decoded : '';
+}
+
+function avianSpeciesNames(array $sciNames, string $lang): array {
+    static $files = [];
+    static $seen = [];
+    if ($lang === '' || !$sciNames) return [];
+    if (!array_key_exists($lang, $files)) {
+        $path = avianLabelPath($lang);
+        $files[$lang] = $path === '' ? false : @file_get_contents($path);
+        $seen[$lang] = [];
+    }
+    if ($files[$lang] === false) return [];
+    $out = [];
+    foreach ($sciNames as $sci) {
+        if (!array_key_exists($sci, $seen[$lang])) {
+            $seen[$lang][$sci] = avianLookupName($files[$lang], $sci);
+        }
+        if ($seen[$lang][$sci] !== '') $out[$sci] = $seen[$lang][$sci];
+    }
+    return $out;
+}
+
+/* Walk a response payload and collect every scientific name in it.
+
+   A node that carries 'sci' sets the species for itself and everything
+   below it, which covers both shapes the endpoints produce: rows of
+   {sci, com, ...} and the species page's {sci, summary: {com, ...}}. */
+function avianCollectSci($node, string $inherited, array &$found): void {
+    if (!is_array($node)) return;
+    $sci = $inherited;
+    if (isset($node['sci']) && is_string($node['sci']) && $node['sci'] !== '') {
+        $sci = $node['sci'];
+    }
+    if ($sci !== '' && array_key_exists('com', $node)) $found[$sci] = true;
+    foreach ($node as $value) {
+        if (is_array($value)) avianCollectSci($value, $sci, $found);
+    }
+}
+
+function avianApplyNames($node, string $inherited, array $names) {
+    if (!is_array($node)) return $node;
+    $sci = $inherited;
+    if (isset($node['sci']) && is_string($node['sci']) && $node['sci'] !== '') {
+        $sci = $node['sci'];
+    }
+    if ($sci !== '' && array_key_exists('com', $node) && isset($names[$sci])) {
+        $node['com'] = $names[$sci];
+    }
+    foreach ($node as $key => $value) {
+        if (is_array($value)) $node[$key] = avianApplyNames($value, $sci, $names);
+    }
+    return $node;
+}
+
+function avianTranslatePayload(array $payload, string $lang): array {
+    if ($lang === '') return $payload;
+    $found = [];
+    avianCollectSci($payload, '', $found);
+    if (!$found) return $payload;
+    $names = avianSpeciesNames(array_keys($found), $lang);
+    if (!$names) return $payload;
+    return avianApplyNames($payload, '', $names);
+}
+
+/* Single exit for every data payload, so species names are resolved in
+   exactly one place. Error responses still echo directly. */
+function avian_json(array $payload): void {
+    echo json_encode(avianTranslatePayload($payload, avianRequestedLang()));
+}
+
 if (defined('AVIAN_BIRDNET_API_LIBRARY_ONLY')) return;
 
 if (!file_exists($DB_PATH)) {
@@ -136,7 +258,7 @@ switch ($action) {
         $week        = (int)(one($db, "SELECT COUNT(*) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
         $weekSpec    = (int)(one($db, "SELECT COUNT(DISTINCT Sci_Name) AS n FROM detections WHERE ".windowClause(168), $bind)['n'] ?? 0);
         $first       = one($db, "SELECT MIN(Date) AS d FROM detections WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)", $bind);
-        echo json_encode([
+        avian_json([
             'totals'    => ['detections' => $total, 'species' => $species],
             'today'     => ['detections' => $day, 'species' => $daySpec],
             'last_hour' => ['detections' => $lastHour],
@@ -159,7 +281,7 @@ switch ($action) {
         . "       MAX(Date||' '||Time) AS last_seen, COUNT(*) AS n, MAX(Confidence) AS best_conf "
         . "FROM detections GROUP BY Sci_Name ORDER BY first_seen ASC"
         );
-        echo json_encode(['species' => $rs, 'as_of' => date('c')]);
+        avian_json(['species' => $rs, 'as_of' => date('c')]);
         break;
     }
 
@@ -194,7 +316,7 @@ switch ($action) {
             $r['top_file'] = $best['file'] ?? null;
             $r['top_at']   = isset($best['d']) ? ($best['d'].' '.$best['t']) : null;
         }
-        echo json_encode([
+        avian_json([
             'hours' => $hours, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'],
             'species' => $rs, 'site_name' => publicSiteName($CONF_PATH), 'as_of' => date('c')
@@ -219,7 +341,7 @@ switch ($action) {
         . "FROM detections WHERE Sci_Name = :sn",
           [':sn' => $sci]
         );
-        echo json_encode([
+        avian_json([
             'sci' => $sci,
             'summary' => $summary,
             'detections' => $detections,
@@ -247,7 +369,7 @@ switch ($action) {
         . "WHERE Date >= DATE('now','localtime','-30 day') "
         . "GROUP BY hour ORDER BY hour"
         );
-        echo json_encode([
+        avian_json([
             'days'    => $days,
             'daily'   => $daily,
             'by_hour' => $by_hour,
@@ -269,7 +391,7 @@ switch ($action) {
         . "GROUP BY Sci_Name ORDER BY first_seen DESC LIMIT :lim",
           [':anchor' => $ctx['anchor'], ':lim' => $limit]
         );
-        echo json_encode([
+        avian_json([
             'date' => $ctx['date'], 'station_date' => $ctx['today'],
             'is_today' => $ctx['is_today'], 'species' => $rs, 'as_of' => date('c')
         ]);
@@ -287,7 +409,7 @@ switch ($action) {
         . "WHERE Date <= :today GROUP BY Date ORDER BY Date",
           [':today' => $today]
         );
-        echo json_encode([
+        avian_json([
             'station_date' => $today,
             'first_date' => $rs[0]['date'] ?? null,
             'last_date' => $rs ? $rs[count($rs) - 1]['date'] : null,
@@ -347,7 +469,7 @@ switch ($action) {
         $rangeStart = $hours <= 1 ? max(0, $nowSlot - 59)
                     : ($hours <= 12 ? max(0, $nowSlot - 719) : 0);
         $rangeEnd = $hours <= 12 ? $nowSlot : 1439;
-        echo json_encode([
+        avian_json([
             'days'     => $days,
             'hours'    => $hours,
             'mode'     => $mode,
@@ -405,7 +527,7 @@ switch ($action) {
         usort($species, function ($a, $b) {
             return $b['total'] <=> $a['total'] ?: strcmp($a['sci'], $b['sci']);
         });
-        echo json_encode([
+        avian_json([
             'date'    => $date,
             'station_date' => $today,
             'is_today' => $date === $today,
