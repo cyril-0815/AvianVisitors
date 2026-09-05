@@ -1558,7 +1558,11 @@
   }
   .stats-side ol { list-style: none; padding: 0; margin: 0; }
   .stats-side li {
-    display: grid; grid-template-columns: 44px 1fr auto; gap: 10px;
+    /* 56px, not 44: the label column carries "12d ago" in English but
+       "vor 12 T" in German, and a wrapped two-line label breaks the
+       baseline the whole row is aligned on. The species column has the
+       room to give. */
+    display: grid; grid-template-columns: 56px 1fr auto; gap: 10px;
     padding: 2px 0;
     box-shadow: inset 0 -1px 0 rgba(26,22,18,0.05);
     font: 12.5px/1.25 ui-serif, Georgia, serif; color: var(--ink);

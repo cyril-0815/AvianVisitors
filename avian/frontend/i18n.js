@@ -267,7 +267,7 @@
     'stats.thatDay': 'an dem Tag',
     'stats.today': 'heute',
     'stats.daysAgo': 'vor {n} T',
-    'stats.daysPrior': '{n} T davor',
+    'stats.daysPrior': '{n} T',
 
     'stats.row.now': 'JETZT',
     'stats.row.hour': 'STUNDE',
@@ -454,8 +454,8 @@
     'stats.noDetectionsYet': 'aucune détection pour l\'instant',
     'stats.thatDay': 'ce jour-là',
     'stats.today': 'aujourd\'hui',
-    'stats.daysAgo': 'il y a {n} j',
-    'stats.daysPrior': '{n} j avant',
+    'stats.daysAgo': '{n} j',
+    'stats.daysPrior': '{n} j',
 
     'stats.row.now': 'MAINT.',
     'stats.row.hour': 'HEURE',
