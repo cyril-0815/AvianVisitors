@@ -2,7 +2,7 @@
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
   // Library-wide revision for a full offline sketch rebuild. One-species
   // corrections use ART_REVISIONS below.
-  var SKETCH_VERSION = 'r16'; // r16: added Yellowhammer, Common Chiffchaff, Eurasian Wren, Spotted Nutcracker, Eurasian Jay via new_species.py
+  var SKETCH_VERSION = 'r17'; // r17: added Short-toed Treecreeper via new_species.py
   // re-rendered (perched + flight) with clean cutouts.
   // Cache-bust for /avian/api/cutout.php. Bump only when every CF DC must
   // drop the full image library.
@@ -10,7 +10,7 @@
   // equivalent to a global cache purge for /avian/api/cutout.php.
   // caches.default.delete() in the worker only affects one colo at a time,
   // so a versioned URL is the only reliable way to invalidate everywhere.
-  var IMG_VERSION = 'r16'; // r16: added Yellowhammer, Common Chiffchaff, Eurasian Wren, Spotted Nutcracker, Eurasian Jay via new_species.py
+  var IMG_VERSION = 'r17'; // r17: added Short-toed Treecreeper via new_species.py
   // with clean cutouts, so drop every cached copy.
   // Keep table and one-off art revisions separate from the library-wide
   // versions above. A corrected species should not evict every bird image.
