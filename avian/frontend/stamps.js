@@ -2390,6 +2390,15 @@ document.documentElement.setAttribute('data-stamps-stage', 'fx-ready');
     return TPL.ribbonbird || TPL.geo || null;
   }
   function familyOf(sci) { return groupFor(sci) || 'Other'; }
+  /* familyOf() stays English on purpose: the value is a lookup key for
+     GROUP_STYLE / GROUP_LATIN, drives the data-family attribute that CSS
+     and the Doves & Pigeons flight-plate rule key off, and is what the
+     Atlas groups by. Only the printed label travels between languages. */
+  function familyLabel(name) {
+    return (window.I18N && window.I18N.familyLabel)
+      ? window.I18N.familyLabel(name || 'Other')
+      : (name || 'Other');
+  }
   function latinOf(sci) {
     var g = groupFor(sci);
     return (g && GROUP_LATIN[g]) || '';
@@ -2679,7 +2688,7 @@ document.documentElement.setAttribute('data-stamps-stage', 'fx-ready');
       .replace(/\{\{FLY_NAME\}\}/g, flycatcherName(commonName))
       .replace(/\{\{SCI_STACK\}\}/g, stackName(bird.sci))
       .replace(/\{\{INDEX\}\}/g, bird.index)
-      .replace(/\{\{FAMILY\}\}/g, esc(fam))
+      .replace(/\{\{FAMILY\}\}/g, esc(familyLabel(fam)))
       .replace(/\{\{ORDER\}\}/g, esc(lat))
       .replace(/\{\{ORDER_PAIRS\}\}/g, stackPairs(lat))
       .replace(/\{\{ORDER_HALVES\}\}/g, stackHalves(lat))
@@ -2714,7 +2723,7 @@ document.documentElement.setAttribute('data-stamps-stage', 'fx-ready');
   }
 
   window.STAMPS = {
-    markup: markup, styleFor: styleFor, familyOf: familyOf, latinOf: latinOf,
+    markup: markup, styleFor: styleFor, familyOf: familyOf, familyLabel: familyLabel, latinOf: latinOf,
     boxFor: boxFor, BOX_W: BOX_W, BOX_H: BOX_H, NAT_W: NAT_W, TPL: TPL,
     GROUP_STYLE: GROUP_STYLE, GROUP_LATIN: GROUP_LATIN,
     syncFringe: function (root) {
