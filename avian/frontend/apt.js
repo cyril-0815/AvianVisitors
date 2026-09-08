@@ -1828,6 +1828,25 @@
        moment and over it, across a neighbour, the next - which is precisely
        what a change of nothing but the spelling must not do. So the run is
        fixed and the type gives way instead. */
+    /* A name the bird's own edges could not carry sits on a supporting line
+       beside it. There is no run to hand back, so the line itself is: same
+       direction, same centre, same distance from the drawing, and only as
+       long as the new name needs. Never larger than the size the pack chose,
+       because that size is what set the line's clearance - grown past it the
+       letters would reach into the bird they were placed clear of. */
+    if (keep && keep.tan && keep.rows && keep.rows[0] && keep.rows[0].pts.length > 1) {
+      var base = keep.rows[0].pts;
+      var p0 = base[0], p1 = base[base.length - 1];
+      var mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
+      var L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+      var ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L;
+      px = Math.min(maxPx, keep.px);
+      var half = (nameEm * px + 4) / 2;
+      return { px: px, q: 0, deg: keep.deg, tan: true,
+               rows: [{ text: name,
+                        pts: [[mx - ux * half, my - uy * half],
+                              [mx + ux * half, my + uy * half]] }] };
+    }
     if (keep && keep.cand) {
       // The same number of lines as before, where the new name can be broken
       // that way at all: a second line rides a baseline stacked off the
@@ -2093,7 +2112,10 @@
     var tanPx = Math.max(LABEL_MIN_PX,
                          Math.min(maxPx, Math.floor(LABEL_REACH * W / nameEm)));
     var tan = tangentSpan(out, W, H, tanPx, nameEm * tanPx + 4);
-    return tan ? { px: tanPx, rows: [{ pts: tan.pts, text: name }], q: 0, deg: tan.deg }
+    // Marked, because this plan has no run of the bird's outline behind it
+    // and so cannot be re-set the way the others are. keep handles it above.
+    return tan ? { px: tanPx, rows: [{ pts: tan.pts, text: name }], q: 0,
+                   deg: tan.deg, tan: true }
                : null;
   }
 
@@ -2182,6 +2204,9 @@
      because the re-lettering pass asks for the same name again at a lower
      ceiling until it stops landing on a neighbour. Returns whether the
      bird ended up with lettering. */
+  /* Returns the plan, or null. The plan is what holds a name in place when
+     it is replaced: the run it rode, the line-break it took, or the
+     supporting line it sat on. */
   function planTileLabel(t, maxPx, keep) {
     clearLabel(t);
     var name = SPNAME(t.data);
@@ -2200,15 +2225,11 @@
     if (plan) {
       t.labelPx = plan.px;
       t.labelRows = plan.rows;
-      // The run and the line-break this name rode, so the next name on this
-      // bird can be set in the same place. Deliberately outside clearLabel:
-      // it outlives the lettering it was chosen for.
-      t.labelPlan = plan;
       t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
       t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
     }
     LABEL_ASC = savedAsc; LABEL_DESC = savedDesc;
-    return !!plan;
+    return plan;
   }
 
   function assignLabels(tiles) {
@@ -2216,8 +2237,14 @@
     // placement has to be re-measured against the new silhouette size.
     var on = labelsOn();
     tiles.forEach(function (t) {
-      if (!on) { clearLabel(t); return; }
-      planTileLabel(t, labelCeiling(t));
+      if (!on) { clearLabel(t); t.labelPlan = null; return; }
+      // The plan the PACK chose is the anchor every later setting of this
+      // bird's name is held to. Recorded here and nowhere else: were a
+      // re-lettering to overwrite it, each switch would hold the next one to
+      // a smaller size than the last and the collage would ratchet down.
+      // Deliberately outside clearLabel, which the fitting pass calls: the
+      // anchor outlives the lettering it was chosen for.
+      t.labelPlan = planTileLabel(t, labelCeiling(t));
     });
   }
 
@@ -2279,7 +2306,7 @@
         // Keep the first plan, the one at the natural size, as the fallback.
         if (got && !full) {
           full = { px: t.labelPx, rows: t.labelRows, box: t.labelBox,
-                   cells: t.labelCells, plan: t.labelPlan };
+                   cells: t.labelCells };
         }
         if (got && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) { fitted = true; break; }
         if (ceiling <= LABEL_MIN_PX) break;
@@ -2297,9 +2324,6 @@
       if (!fitted && full) {
         t.labelPx = full.px; t.labelRows = full.rows;
         t.labelBox = full.box; t.labelCells = full.cells;
-        // The plan too, or the next name on this bird would be asked for the
-        // line-break of a setting that was tried and thrown away.
-        t.labelPlan = full.plan;
       }
       // The kept run could not carry this name at all. Rather than leave the
       // bird nameless, let the planner choose freely this once - the only
