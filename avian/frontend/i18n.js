@@ -18,6 +18,11 @@
    - Species names are NOT translated here. They come from the API,
      which resolves them from the scientific name against BirdNET-Pi's
      own model/l18n/labels_<lang>.json. See avian/api/birdnet-api.php.
+   - The name mode (common name vs scientific binomial) DOES live here.
+     It is the same kind of visitor choice as the language and shares its
+     storage, its pinning and its change notification.
+   - Changing either no longer reloads the page. Surfaces register with
+     onChange() and re-resolve their own text; see apt.js.
    ============================================================ */
 (function () {
   'use strict';
@@ -27,6 +32,14 @@
   // Swiss variants: the station lives in Switzerland and the whole
   // project is written in Swiss spelling (no eszett).
   var LOCALES = { en: 'en-US', de: 'de-CH', fr: 'fr-CH' };
+
+  /* ---- Species name mode ----
+     'common' prints the bird's name in the interface language, 'sci'
+     prints the scientific binomial instead. Deliberately independent of
+     the language: a German interface with Latin bird names is a normal
+     combination for anyone comparing the collage against a field guide. */
+  var NAME_MODES = ['common', 'sci'];
+  var NAME_KEY = 'bird:names';
 
   /* ---- Dictionaries ----
      EN is the contract. Every key here must exist in DE and FR; the
@@ -41,6 +54,9 @@
     'nav.menu': 'menu',
     'nav.backToCollage': 'back to collage',
     'nav.language': 'language',
+    'nav.names': 'bird names',
+    'names.common': 'name',
+    'names.sci': 'lat',
 
     'title.heardRecently': 'Heard Recently',
     'title.avianAtlas': 'Avian Atlas',
@@ -231,6 +247,9 @@
     'nav.menu': 'menü',
     'nav.backToCollage': 'zurück zur Collage',
     'nav.language': 'Sprache',
+    'nav.names': 'Vogelnamen',
+    'names.common': 'Name',
+    'names.sci': 'lat',
 
     'title.heardRecently': 'Kürzlich gehört',
     'title.avianAtlas': 'Vogel-Atlas',
@@ -419,6 +438,9 @@
     'nav.menu': 'menu',
     'nav.backToCollage': 'retour au collage',
     'nav.language': 'langue',
+    'nav.names': "noms d'oiseaux",
+    'names.common': 'nom',
+    'names.sci': 'lat',
 
     'title.heardRecently': 'Entendus récemment',
     'title.avianAtlas': 'Atlas des oiseaux',
@@ -634,6 +656,28 @@
   var pinned = fromQuery();
   var lang = resolve();
 
+  /* ---- Name mode resolution ----
+     The same order as the language, minus the browser step: nothing in a
+     browser says whether its owner reads scientific names. ?names=sci
+     pins the mode and hides its switch, exactly as ?lang= does, so the
+     kiosk screen can be fixed to either. */
+  function namesFromQuery() {
+    try {
+      var match = /[?&]names=([A-Za-z]+)/.exec(String(location.search || ''));
+      if (!match) return '';
+      var value = match[1].toLowerCase();
+      return NAME_MODES.indexOf(value) >= 0 ? value : '';
+    } catch (e) { return ''; }
+  }
+  function namesFromStorage() {
+    try {
+      var value = String(localStorage.getItem(NAME_KEY) || '').toLowerCase();
+      return NAME_MODES.indexOf(value) >= 0 ? value : '';
+    } catch (e) { return ''; }
+  }
+  var namesPinned = namesFromQuery();
+  var nameMode = namesPinned || namesFromStorage() || 'common';
+
   function fill(template, vars) {
     if (!vars) return template;
     return String(template).replace(/\{(\w+)\}/g, function (whole, name) {
@@ -705,20 +749,53 @@
     }
   }
 
-  /* Switching language re-resolves every rendered surface at once. A
-     reload is the honest way to do that: the collage, the atlas grid,
-     the stamps and every API payload all carry language now, and
-     re-deriving them in place would mean a second rendering path to
-     keep correct forever. The kiosk screen never takes this path. */
+  /* The name to print for one species, from whatever the API returned
+     for it. Either mode falls back to the other name when its own is
+     missing, so a bird is never nameless. */
+  function speciesName(com, sci) {
+    if (nameMode === 'sci') return sci || com || '';
+    return com || sci || '';
+  }
+
+  /* ---- Change notification ----
+     Switching used to reload the page. It no longer does. A reload
+     re-rolls the collage's per-species pose, so the birds visibly
+     re-shuffled under a change that is meant to be nothing but a change
+     of lettering. Instead, every surface that renders language- or
+     name-dependent text registers here and re-resolves itself in place.
+     Static markup is handled first, by applyDom(), so a listener only
+     has to care about what it renders from JS. The kiosk screen pins
+     both choices and never takes this path. */
+  var listeners = [];
+  function onChange(fn) {
+    if (typeof fn === 'function') listeners.push(fn);
+  }
+  function announce(what) {
+    applyDom(document);
+    listeners.forEach(function (fn) {
+      // One broken listener must not stop the rest from re-rendering.
+      try { fn(what); } catch (e) { console.warn('i18n listener failed', e); }
+    });
+  }
+
   function setLang(next) {
     if (SUPPORTED.indexOf(next) < 0 || next === lang) return;
     try { localStorage.setItem(STORAGE_KEY, next); } catch (e) {}
     // Keep the in-memory language in step with what was just stored, so a
-    // second press of the same button is a no-op even in the moment
-    // before the reload takes effect.
+    // second press of the same button is a no-op.
     lang = next;
     window.I18N.lang = next;
-    location.reload();
+    announce('lang');
+  }
+
+  /* Nothing server-side depends on the name mode: every payload already
+     carries both names, so this needs no refetch, only a re-render. */
+  function setNameMode(next) {
+    if (NAME_MODES.indexOf(next) < 0 || next === nameMode) return;
+    try { localStorage.setItem(NAME_KEY, next); } catch (e) {}
+    nameMode = next;
+    window.I18N.nameMode = next;
+    announce('names');
   }
 
   window.I18N = {
@@ -736,7 +813,14 @@
     weekdayLetters: weekdayLetters,
     applyDom: applyDom,
     setLang: setLang,
-    resolve: resolve
+    resolve: resolve,
+    NAME_MODES: NAME_MODES,
+    NAME_KEY: NAME_KEY,
+    nameMode: nameMode,
+    namesPinned: !!namesPinned,
+    speciesName: speciesName,
+    setNameMode: setNameMode,
+    onChange: onChange
   };
 
   if (document.readyState === 'loading') {
