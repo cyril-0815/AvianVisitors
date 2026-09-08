@@ -196,20 +196,50 @@ check(/return fetch\(withLang\(url\)/.test(apt), 'fetchJson routes through it');
 const rawFetches = (publicApt.match(/fetch\('\.\/avian\/api\/birdnet-api\.php/g) || []).length;
 check(rawFetches === 0, 'no API call bypasses withLang()');
 
-/* ---- the language switch is public and kiosk-aware ---- */
+/* ---- the public switches are kiosk-aware ---- */
 const css = fs.readFileSync(path.join(frontend, 'styles.css'), 'utf8');
-check(/\.top \.lang-pick\[hidden\] \{ display: none; \}/.test(css),
-  'a pinned language really hides the pill: [hidden] alone loses to .top .window-pick');
+check(/\.top \.lang-pick\[hidden\], \.top \.name-pick\[hidden\] \{ display: none; \}/.test(css),
+  'a pinned choice really hides its pill: [hidden] alone loses to .top .window-pick');
 check(/\.top \{ gap: 10px; justify-content: flex-start; \}/.test(css),
-  'both header pills stay on the left, clear of the fixed menu button');
+  'the header pills stay on the left, clear of the fixed menu button');
 check(html.indexOf('class="window-pick lang-pick"') >= 0,
   'the language pill reuses the window picker component');
+check(html.indexOf('class="window-pick name-pick"') >= 0,
+  'and so does the bird-name pill');
 
 check(html.indexOf('id="langPick"') >= 0, 'the header carries the language switch');
-check(html.indexOf('id="langPick"') < html.indexOf('class="menu-shell"'),
-  'the switch sits in the header, not inside the admin menu');
+check(html.indexOf('id="namePick"') >= 0, 'the header carries the bird-name switch');
+check(html.indexOf('id="namePick"') < html.indexOf('class="menu-shell"'),
+  'both switches sit in the header, not inside the admin menu');
 check(/if \(I18N\.pinned\) \{\s*langPick\.hidden = true;/.test(apt),
   'a pinned language hides the switch, so the kiosk screen stays clean');
+check(/if \(I18N\.namesPinned\) \{\s*namePick\.hidden = true;/.test(apt),
+  'a pinned name mode hides its switch too');
+check(html.indexOf('data-names="common"') >= 0 && html.indexOf('data-names="sci"') >= 0,
+  'the bird-name pill offers both modes');
+
+/* ---- switching re-resolves in place, it does not reload ----
+   A reload re-rolls the collage's per-species pose, so the birds land
+   somewhere else. That is exactly what the switch must not do. */
+const i18nSource = fs.readFileSync(path.join(frontend, 'i18n.js'), 'utf8');
+check(i18nSource.indexOf('location.reload()') < 0,
+  'i18n.js no longer reloads the page on a switch');
+check(/I18N\.onChange\(function \(what\) \{/.test(apt),
+  'apt.js registers for the change instead');
+check(/EMPTY_WINDOW_COPY = T\('empty.window'\);[\s\S]{0,400}?refreshAll\(false\)/.test(apt),
+  'the handler re-resolves the strings that were resolved once at load');
+
+/* ---- printed names go through the name-mode helper ---- */
+check(/function SPNAME\(s\) \{/.test(apt), 'apt.js has one helper for the printed name');
+check(publicApt.indexOf('SPNAME(t.data)') > 0, 'the collage label prints through it');
+check(!/alt="' \+ s\.com \+ '"/.test(apt), 'no collage tile still prints the raw common name');
+// The illustration pipeline must keep sending the real common name to
+// cutout.php whatever is on screen, or a Latin request would poison the
+// Gemini prompt and split the image cache.
+check(/'&com=' \+ encodeURIComponent\(com\)/.test(apt),
+  'the cutout URL still carries the real common name');
+check(!/&com=' \+ encodeURIComponent\(SPNAME/.test(apt),
+  'the name mode never leaks into the illustration request');
 
 /* ---- the navigation and the code agree on which views exist ----
    The Atlas is currently withdrawn, which takes two edits: the flag in

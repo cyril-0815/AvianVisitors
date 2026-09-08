@@ -13,6 +13,21 @@
   // before the language picker existed.
   function TLOC() { return I18N ? I18N.locale() : undefined; }
   var LANG = I18N ? I18N.lang : 'en';
+  // Bird names print either in the interface language or as the scientific
+  // binomial. The choice is the visitor's, sits beside the language in the
+  // header, and is resolved in i18n.js alongside it.
+  function sciNames() { return !!I18N && I18N.nameMode === 'sci'; }
+  // The name to PRINT for one API row. Never the value the art pipeline
+  // sends to cutout.php: that one stays the real common name whatever is
+  // on screen, or a Latin request would poison the illustration prompt and
+  // its cache key.
+  function SPNAME(s) {
+    if (!s) return '';
+    return I18N ? I18N.speciesName(s.com, s.sci) : (s.com || s.sci || '');
+  }
+  // The small scientific line printed under a name in the lists. In
+  // scientific mode the line above it already is that name, so it goes.
+  function SPSUB(s) { return (s && !sciNames()) ? (s.sci || '') : ''; }
   var PLACEHOLDER = [{ "sci": "Calypte anna", "com": "Anna's Hummingbird", "featured": true }, { "sci": "Passer domesticus", "com": "House Sparrow" }, { "sci": "Haemorhous mexicanus", "com": "House Finch" }, { "sci": "Turdus migratorius", "com": "American Robin" }, { "sci": "Zenaida macroura", "com": "Mourning Dove" }, { "sci": "Spinus psaltria", "com": "Lesser Goldfinch" }, { "sci": "Zonotrichia leucophrys", "com": "White-crowned Sparrow" }, { "sci": "Aphelocoma californica", "com": "California Scrub-Jay" }, { "sci": "Mimus polyglottos", "com": "Northern Mockingbird" }, { "sci": "Sayornis nigricans", "com": "Black Phoebe" }, { "sci": "Larus occidentalis", "com": "Western Gull" }, { "sci": "Corvus brachyrhynchos", "com": "American Crow" }];
   // Library-wide revision for a full offline sketch rebuild. One-species
   // corrections use ART_REVISIONS below.
@@ -96,6 +111,10 @@
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
   // stays put with no fade (collage and stats both say Heard Recently).
+  // Resolved once here rather than at every use: both are pasted into a
+  // dozen innerHTML templates. Switching the language re-resolves them,
+  // see the I18N.onChange handler below - anything else added here has to
+  // be re-resolved there too.
   var VIEW_TITLES = [T('title.heardRecently'), T('title.heardRecently'), T('title.avianAtlas')];
   var EMPTY_WINDOW_COPY = T('empty.window');
   var staticHead = document.querySelector('.static-head');
@@ -468,26 +487,99 @@
           if (b.dataset.lang === LANG) return;
           langBtns.forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
           syncPill(langPick);
-          // setLang() reloads. Everything on screen - the collage, the
-          // atlas, the stamps and every API payload - carries language,
-          // and re-deriving all of it in place would mean a second
-          // rendering path to keep correct forever.
+          // setLang() no longer reloads; it announces, and the handler
+          // below re-resolves every surface in place. See that comment
+          // for why the reload had to go.
           I18N.setLang(b.dataset.lang);
         });
       });
     }
   }
 
+  // ---- Bird-name picker ----
+  // Second public control, same segmented pill: the bird's name in the
+  // interface language, or its scientific binomial. Independent of the
+  // language beside it, and hidden the same way when ?names= pins it.
+  var namePick = document.getElementById('namePick');
+  var nameBtns = [];
+  if (namePick && I18N) {
+    if (I18N.namesPinned) {
+      namePick.hidden = true;
+    } else {
+      namePick.hidden = false;
+      nameBtns = [].slice.call(namePick.querySelectorAll('button'));
+      nameBtns.forEach(function (b) {
+        b.setAttribute('aria-current', b.dataset.names === I18N.nameMode ? 'true' : 'false');
+      });
+      nameBtns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (b.dataset.names === I18N.nameMode) return;
+          nameBtns.forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
+          syncPill(namePick);
+          I18N.setNameMode(b.dataset.names);
+        });
+      });
+    }
+  }
+
+  /* ---- Re-resolving the page in place ----
+     Both switches used to reload. A reload re-rolls the collage's
+     per-species pose (collagePose starts empty on a fresh document), and
+     a different pose is a different silhouette, so the packer laid the
+     birds out somewhere else. To the eye the collage had reshuffled
+     under a change that is meant to be nothing but a change of
+     lettering.
+
+     Without the reload, collagePose survives, the packer's PRNG is
+     seeded to a constant and every tile's size still comes from its
+     detection count - so the same birds come back at the same sizes in
+     the same order. Only the label metrics differ, which moves a bird by
+     a few pixels where a name got longer or shorter. Deliberate: the
+     packer reserves the box a name actually needs, so leaving the
+     positions frozen would let a long binomial print over its
+     neighbour.
+
+     A language change has to go back to the API, because species names
+     are resolved there from Sci_Name. A name-mode change does not: every
+     payload already carries both names. */
+  if (I18N && I18N.onChange) {
+    I18N.onChange(function (what) {
+      LANG = I18N.lang;
+      VIEW_TITLES = [T('title.heardRecently'), T('title.heardRecently'), T('title.avianAtlas')];
+      EMPTY_WINDOW_COPY = T('empty.window');
+      if (staticTitle) staticTitle.textContent = VIEW_TITLES[currentView];
+      applyWeekdayLetters();
+      // The pills resize with their new wording.
+      syncAllPills();
+      if (what === 'lang') {
+        // Per-species payloads behind the postcard hold names too.
+        SPECIES_CACHE = {};
+        refreshAll(false);
+        // refreshAll only refetches the live stats block; a day picked in
+        // the past has its own fetch.
+        if (hourlyDate !== null) refreshStatsContext(false);
+      } else {
+        // Same render tail as refreshAll(), minus the refetch. Not
+        // renderStatsContext(), which would fold an expanded hourly
+        // ledger shut on what is only a change of lettering.
+        renderTimeIndependent(false);
+        renderHourly();
+        renderCollageFromData(false);
+      }
+    });
+  }
+
   // Weekday initials in the stats calendar are letters, not dates, so
   // they cannot come from toLocaleDateString.
-  (function () {
+  function applyWeekdayLetters() {
     var week = document.getElementById('statsCalendarWeek');
     if (!week || !I18N) return;
     var letters = I18N.weekdayLetters();
     var cells = week.querySelectorAll('span');
     if (letters.length !== cells.length) return;
     cells.forEach(function (cell, i) { cell.textContent = letters[i]; });
-  })();
+  }
+  applyWeekdayLetters();
 
   // Initial pill placement (after layout settles) + on resize.
   // Atlas sort segmented control - same pill-on-recess pattern.
@@ -517,11 +609,13 @@
   if (ATLAS_ENABLED) wireToggleAdvance(slider);
   wireToggleAdvance(winPick);
   if (langPick && !langPick.hidden) wireToggleAdvance(langPick);
+  if (namePick && !namePick.hidden) wireToggleAdvance(namePick);
   wireToggleAdvance(atlasSortEl);
   wireToggleAdvance(document.getElementById('modalPoseToggle'));
   function syncAllPills() {
     syncPill(slider); syncPill(winPick);
     if (langPick && !langPick.hidden) syncPill(langPick);
+    if (namePick && !namePick.hidden) syncPill(namePick);
     if (atlasSortEl) syncPill(atlasSortEl);
     var cp = document.getElementById('chartPick');
     if (cp) syncPill(cp);
@@ -2042,7 +2136,7 @@
     tiles.forEach(function (t) {
       t.labelBox = null; t.labelRows = null; t.labelPx = 0; t.labelCells = null;
       if (!on) return;
-      var name = t.data.com || t.data.sci;
+      var name = SPNAME(t.data);
       if (!name) return;
       var out = outline(t.slug, t.mask);
       if (!out) return;
@@ -2414,19 +2508,19 @@
       btn.className = 'gtile';
       btn.type = 'button';
       btn.setAttribute('data-sci', s.sci);
-      btn.setAttribute('aria-label', s.com);
+      btn.setAttribute('aria-label', SPNAME(s));
       // Fallback for keyboard / screen-reader users - the visible hover
       // pill below is the primary affordance for sighted mouse users.
       // "calls" (not "heard") because one bird can rack up dozens of
       // detections in a session; "heard" implies distinct individuals.
       var titleN = +s.n || 0;
-      btn.title = (s.com || s.sci) + ' - ' + fmtN(titleN) + ' ' +
+      btn.title = SPNAME(s) + ' - ' + fmtN(titleN) + ' ' +
         TP('collage.call', titleN) + ' ' + windowLabel(currentHours);
       btn.style.left = r.x + 'px';
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
       btn.style.height = r.fullH + 'px';
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + s.com + '">';
+      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + SPNAME(s) + '">';
       if (r.labelRows) {
         addLabelInk();
         // One baseline per line of the name, each riding the line the planner
@@ -2640,7 +2734,7 @@
         var s = hit.data;
         var n = +s.n || 0;
         var noun = TP('collage.call', n);
-        tip.innerHTML = '<span class="ct-name">' + (s.com || s.sci) + '</span>'
+        tip.innerHTML = '<span class="ct-name">' + SPNAME(s) + '</span>'
           + '<span class="ct-w"> - </span>'
           + '<span class="ct-n">' + fmtN(n) + '</span>'
           + '<span class="ct-w"> ' + noun + ' ' + windowLabel(currentHours) + '</span>';
@@ -2914,7 +3008,7 @@
       cols += ''
         + '<div class="stats-tl-col" data-sci="' + s.sci + '" style="left:' + centerPct.toFixed(3) + '%;width:' + colW.toFixed(2) + 'px">'
         + '<div class="stats-tl-square" style="bottom:' + bottomPct.toFixed(1) + '%;width:' + sq.toFixed(1) + 'px;height:' + sq.toFixed(1) + 'px"></div>'
-        + '<div class="stats-tl-label" style="bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP) + 'px)"><span class="com">' + (s.com || s.sci) + '</span><span class="sci">' + s.sci + '</span></div>'
+        + '<div class="stats-tl-label" style="bottom:calc(' + bottomPct.toFixed(1) + '% + ' + (sq + LABEL_GAP) + 'px)"><span class="com">' + SPNAME(s) + '</span><span class="sci">' + SPSUB(s) + '</span></div>'
         + '</div>';
       var showStamp = (i % stride === 0) || (i === C - 1);
       var lab = showStamp ? fmtTs(parseTs(s.last_seen)) : '';
@@ -2995,7 +3089,7 @@
       .sort(function (a, b) { return (+b.n) - (+a.n); })
       .slice(0, 5);
     document.getElementById('statsTopSpec').innerHTML = ranked.length
-      ? ranked.map(function (s, i) { return liRow(pad(i + 1), s.com, fmtN(+s.n), s.sci); }).join('')
+      ? ranked.map(function (s, i) { return liRow(pad(i + 1), SPNAME(s), fmtN(+s.n), s.sci); }).join('')
       : '<li class="stats-window-empty"><span class="window-empty">' + EMPTY_WINDOW_COPY + '</span></li>';
     document.getElementById('statsTopSpecCap').textContent =
       T('stats.topSpeciesCap', { window: statsWindowLabel(currentHours) });
@@ -3015,7 +3109,7 @@
             ? (past ? T('stats.thatDay') : T('stats.today'))
             : T(past ? 'stats.daysPrior' : 'stats.daysAgo', { n: daysAgo });
         }
-        return liRow(label, s.com, '', s.sci);
+        return liRow(label, SPNAME(s), '', s.sci);
       }).join('')
       : liRow('-', T('stats.noDetectionsYet'), '');
   }
@@ -3478,8 +3572,8 @@
     html += '<th class="heatmap-total">total</th></tr></thead><tbody>';
     rowsArr.forEach(function (s) {
       html += '<tr class="heatmap-row" data-sci="' + escHtml(s.sci) + '">'
-        + '<td class="heatmap-name"><span class="com">' + escHtml(s.com) + '</span>'
-        + '<span class="sci">' + escHtml(s.sci) + '</span></td>';
+        + '<td class="heatmap-name"><span class="com">' + escHtml(SPNAME(s)) + '</span>'
+        + '<span class="sci">' + escHtml(SPSUB(s)) + '</span></td>';
       for (var h = rng.from; h <= rng.to; h++) {
         var c = s.hours[h];
         if (c > 0) {
@@ -4817,7 +4911,7 @@
       species.sort(function (a, b) { return (+b.n) - (+a.n); });
     } else if (sortMode === 'alpha') {
       species.sort(function (a, b) {
-        return (a.com || a.sci || '').localeCompare(b.com || b.sci || '');
+        return SPNAME(a).localeCompare(SPNAME(b));
       });
     } else if (sortMode === 'family') {
       // grouped by family, and within a family the most-heard leads
@@ -4862,7 +4956,7 @@
       var needsArt = tablesReady && !DIMS[slugify(s.sci)];
       var fresh = justGenerated[s.sci] ? '&t=' + justGenerated[s.sci] : '';
       if (classic) {
-        var common = s.com || s.sci;
+        var common = SPNAME(s);
         var imageSrc = needsArt ? './nest-eggs.webp' : sketchSrc + fresh;
         var birdWiki = wikiUrl(s.sci);
         var birdEbird = ebirdUrl(s.sci);
@@ -4877,7 +4971,7 @@
           + '<img loading="lazy" decoding="async" src="' + escHtml(imageSrc) + '" alt="' + escHtml(common) + '">'
           + '</div>'
           + '<h3>' + escHtml(common) + '</h3>'
-          + '<div class="sci">' + escHtml(s.sci) + '</div>'
+          + '<div class="sci">' + escHtml(SPSUB(s)) + '</div>'
           + '<div class="spectro-wrap" aria-hidden="true"></div>'
           + '<div class="actions">'
           + '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
@@ -8171,7 +8265,7 @@
     // The common name is already present on every Atlas card/lifelist row.
     // Paint it synchronously so a long title never arrives a frame late and
     // reflows the identity panel while the stamp is landing.
-    document.getElementById('modalCommon').textContent = (lifelistBird && lifelistBird.com) || sci;
+    document.getElementById('modalCommon').textContent = SPNAME(lifelistBird) || sci;
     document.getElementById('modalAllTime').textContent = '-';
     document.getElementById('modalFirstSeen').textContent = '-';
     document.getElementById('modalRarity').textContent = '-';
@@ -8201,7 +8295,7 @@
     loadSpecies.then(function (j) {
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var s = j.summary || {};
-      document.getElementById('modalCommon').textContent = s.com || sci;
+      document.getElementById('modalCommon').textContent = SPNAME(s) || sci;
       document.getElementById('modalAllTime').textContent = (+s.total || 0).toLocaleString(TLOC());
       document.getElementById('modalFirstSeen').textContent = s.first_seen ? fmtRecTime(s.first_seen.split(' ')[0], s.first_seen.split(' ')[1]) : '-';
       var rar = rarityLabel(+s.total || 0, s.first_seen);

@@ -50,6 +50,15 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <button data-lang="fr" type="button">FR</button>
     <button data-lang="en" type="button">EN</button>
   </div>
+  <!-- Public bird-name switch, beside the language and independent of
+       it: the bird's name in the visitor's language, or its scientific
+       binomial. Hidden when ?names= pins the mode, the same kiosk case
+       the language pill above answers. -->
+  <div class="window-pick name-pick" id="namePick" role="tablist" data-i18n-attr="aria-label:nav.names" aria-label="bird names" hidden>
+    <i class="seg-pill" aria-hidden="true"></i>
+    <button data-names="common" type="button" data-i18n="names.common">name</button>
+    <button data-names="sci" type="button" data-i18n="names.sci">lat</button>
+  </div>
 </header>
 
 <!-- The menu button IS its card: one shell, fixed to the top-right

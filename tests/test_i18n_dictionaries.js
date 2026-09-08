@@ -141,14 +141,53 @@ check(htmlEl.innerHTML.indexOf('birdnet.cornell.edu') >= 0, 'the BirdNET credit 
 check(dom.document.documentElement.getAttribute('lang') === 'de', 'the document language attribute follows');
 check(metaEl.getAttribute('content') === DICTS.de['meta.description'], 'the page description follows');
 
-/* ---- switching language ---- */
+/* ---- switching language ----
+   The switch used to reload the page. It must never do that again: a
+   reload re-rolls the collage's per-species pose, and the birds visibly
+   re-shuffle under what is meant to be a change of lettering only. */
 const switcher = loadI18N({ stored: { 'bird:lang': 'de' } });
+const heard = [];
+switcher.I18N.onChange(function (what) { heard.push(what); });
 switcher.I18N.setLang('fr');
 check(switcher.store['bird:lang'] === 'fr', 'the choice is stored');
-check(switcher.reloads.count === 1, 'switching reloads once so every surface re-resolves');
+check(switcher.reloads.count === 0, 'switching never reloads the page');
+check(heard.join(',') === 'lang', 'it announces the change so the surfaces re-resolve in place');
+check(switcher.I18N.t('nav.collage') === DICTS.fr['nav.collage'], 'and the live dictionary followed');
 switcher.I18N.setLang('fr');
-check(switcher.reloads.count === 1, 'choosing the language already in use does nothing');
+check(heard.length === 1, 'choosing the language already in use does nothing');
 switcher.I18N.setLang('it');
-check(switcher.reloads.count === 1, 'an unsupported language is refused');
+check(heard.length === 1, 'an unsupported language is refused');
+
+/* ---- bird name mode ----
+   Independent of the language: the interface can be German while the
+   birds are named in Latin. Nothing server-side depends on it, because
+   every payload already carries both names. */
+const names = loadI18N({});
+const namesHeard = [];
+names.I18N.onChange(function (what) { namesHeard.push(what); });
+check(names.I18N.nameMode === 'common', 'common names are the default');
+check(names.I18N.speciesName('Great Tit', 'Parus major') === 'Great Tit',
+  'common mode prints the common name');
+names.I18N.setNameMode('sci');
+check(names.store['bird:names'] === 'sci', 'the name mode is stored');
+check(names.reloads.count === 0, 'the name mode never reloads either');
+check(namesHeard.join(',') === 'names', 'a name change announces itself as a name change');
+check(names.I18N.speciesName('Great Tit', 'Parus major') === 'Parus major',
+  'scientific mode prints the binomial');
+check(names.I18N.speciesName('Great Tit', '') === 'Great Tit',
+  'a row with no binomial keeps its common name');
+check(names.I18N.speciesName('', 'Parus major') === 'Parus major',
+  'and a row with no common name is never nameless');
+names.I18N.setNameMode('klingon');
+check(namesHeard.length === 1, 'an unknown name mode is refused');
+check(names.I18N.t('nav.collage') === DICTS.en['nav.collage'],
+  'switching bird names leaves the interface language alone');
+
+const pinnedNames = loadI18N({ search: '?names=sci', stored: { 'bird:names': 'common' } });
+check(pinnedNames.I18N.nameMode === 'sci', 'the URL pins the name mode over the stored choice');
+check(pinnedNames.I18N.namesPinned === true, 'a pinned mode hides its switch, as the kiosk needs');
+const storedNames = loadI18N({ stored: { 'bird:names': 'sci' } });
+check(storedNames.I18N.nameMode === 'sci', 'the stored choice wins when nothing is pinned');
+check(storedNames.I18N.namesPinned === false, 'and it leaves the switch on screen');
 
 process.stdout.write('i18n dictionary tests passed (' + checks + ' checks)\n');
