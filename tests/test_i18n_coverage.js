@@ -255,6 +255,10 @@ check(!/SPNAME|\.com\b/.test(layoutKeyFn[0]),
   'the layout key ignores the names, or a change of lettering would re-pack');
 check(/collageLayout && collageLayout\.key === key/.test(apt),
   'a matching key re-uses the pack instead of running it again');
+check(/function planLabel\(out, name, W, H, maxPx, keep\)/.test(apt),
+  'planLabel can be told to re-set a name on the run the last one chose');
+check(/planTileLabel\(t, ceiling, keep\)/.test(apt),
+  'and the re-lettering pass tells it, so a name never changes place');
 const refitFn = /function fitLabelsToLayout\(layout\) \{[\s\S]*?\n  \}/.exec(apt);
 check(!!refitFn, 'apt.js re-letters a kept layout in place');
 check(!/\bt\.x\s*=[^=]|\bt\.y\s*=[^=]/.test(refitFn[0]),
