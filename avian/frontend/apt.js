@@ -1809,15 +1809,52 @@
   // all. That can only be measured once the name is set; ranking runs by their
   // own shape and length, as the first pass does, is a guess at it, and it is
   // the guess that put those names on the crown.
-  function planLabel(out, name, W, H, maxPx) {
+  function planLabel(out, name, W, H, maxPx, keep) {
     var lays = breakName(name), nameEm = lays[0].em, i, j, px, rode, best;
+    var keepLay, keepCap;
     // Four points is as far as the type will give ground to find an edge.
     // Further down it is conceding more than being on the bird's own line is
     // worth, and a supporting line at full size reads better than a contour
     // at half of it.
     var floorPx = Math.max(LABEL_MIN_PX, maxPx - 4);
-    var cands = pickEdge(out, W, H, nameEm, lays[lays.length - 1].em, maxPx, floorPx);
     var mid = [W / 2, H / 2], slack = 2 * LABEL_EXT;
+    var cands = keep && keep.cand ? null
+      : pickEdge(out, W, H, nameEm, lays[lays.length - 1].em, maxPx, floorPx);
+
+    /* ---- Re-setting a name that replaces another on the same bird ----
+       The run the first name chose is kept, and with it the side of the bird
+       the lettering sits on and the lines it rides. Only the size is allowed
+       to move. Letting the planner choose again put a name under the bird one
+       moment and over it, across a neighbour, the next - which is precisely
+       what a change of nothing but the spelling must not do. So the run is
+       fixed and the type gives way instead. */
+    if (keep && keep.cand) {
+      // The same number of lines as before, where the new name can be broken
+      // that way at all: a second line rides a baseline stacked off the
+      // first, so changing their number moves the lettering as surely as
+      // changing the run would.
+      keepLay = lays[0];
+      for (i = 0; i < lays.length; i++) {
+        if (lays[i].rows.length === (keep.lay ? keep.lay.rows.length : 1)) keepLay = lays[i];
+      }
+      // Start at the largest size this run could carry the name at, read
+      // straight off the two length rules in fits(), rather than at a ceiling
+      // it could never reach.
+      keepCap = Math.min(maxPx, keep.cand.len / LABEL_RUN);
+      if (keepLay.em > slack) keepCap = Math.min(keepCap, keep.cand.len / (keepLay.em - slack));
+      for (px = keepCap; px >= LABEL_MIN_PX; px -= 0.5) {
+        if (!fits(keep.cand, keepLay, px, keepLay.rows.length > 1)) continue;
+        rode = set(keep.cand, px, keepLay);
+        // hug() as the search itself finishes, so a name that was curled onto
+        // its bird stays curled onto it.
+        if (rode) return hug(planned(keep.cand, keepLay, px, rode));
+      }
+      // Nothing legal at any readable size on this run. One last try at the
+      // floor with the length rules set aside: a name that overruns its own
+      // edge a little still reads, and it still reads where the last one did.
+      rode = set(keep.cand, LABEL_MIN_PX, keepLay);
+      return rode ? hug(planned(keep.cand, keepLay, LABEL_MIN_PX, rode)) : null;
+    }
     // How far the lettering's own box reaches past the tile.
     function spill(rows, px) {
       var b = labelBounds(rows, px);
@@ -2145,7 +2182,7 @@
      because the re-lettering pass asks for the same name again at a lower
      ceiling until it stops landing on a neighbour. Returns whether the
      bird ended up with lettering. */
-  function planTileLabel(t, maxPx) {
+  function planTileLabel(t, maxPx, keep) {
     clearLabel(t);
     var name = SPNAME(t.data);
     if (!name) return false;
@@ -2159,10 +2196,14 @@
     var vBand = textVBand(name);
     var savedAsc = LABEL_ASC, savedDesc = LABEL_DESC;
     LABEL_ASC = vBand.asc; LABEL_DESC = vBand.desc;
-    var plan = planLabel(out, name, t.fullW, t.fullH, maxPx);
+    var plan = planLabel(out, name, t.fullW, t.fullH, maxPx, keep);
     if (plan) {
       t.labelPx = plan.px;
       t.labelRows = plan.rows;
+      // The run and the line-break this name rode, so the next name on this
+      // bird can be set in the same place. Deliberately outside clearLabel:
+      // it outlives the lettering it was chosen for.
+      t.labelPlan = plan;
       t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
       t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
     }
@@ -2216,14 +2257,17 @@
       // every size and drive the whole collage down to the floor, which is
       // exactly what it did.
       g.liftMask(t, t.x, t.y, pad);
+      // The run this bird's name rode when the layout was packed. Passing it
+      // back holds the new name in the same place; only its size gives way.
+      var keep = t.labelPlan;
       var ceiling = labelCeiling(t), full = null, fitted = false;
       for (var tries = 0; tries < 14; tries++) {
-        var set = planTileLabel(t, ceiling);
+        var got = planTileLabel(t, ceiling, keep);
         // Keep the first plan, the one at the natural size, as the fallback.
-        if (set && !full) {
+        if (got && !full) {
           full = { px: t.labelPx, rows: t.labelRows, box: t.labelBox, cells: t.labelCells };
         }
-        if (set && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) { fitted = true; break; }
+        if (got && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) { fitted = true; break; }
         if (ceiling <= LABEL_MIN_PX) break;
         // Step down from whatever the planner actually chose, not from the
         // ceiling it was given, or a plan that came in well under the
@@ -2240,6 +2284,10 @@
         t.labelPx = full.px; t.labelRows = full.rows;
         t.labelBox = full.box; t.labelCells = full.cells;
       }
+      // The kept run could not carry this name at all. Rather than leave the
+      // bird nameless, let the planner choose freely this once - the only
+      // case in which a name moves.
+      if (!t.labelRows && keep) planTileLabel(t, labelCeiling(t));
       g.stampMask(t, t.x, t.y, pad);
       if (t.labelRows) g.stampLabel(t, t.x, t.y, pad);
     });
