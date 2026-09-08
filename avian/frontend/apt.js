@@ -1811,7 +1811,7 @@
   // the guess that put those names on the crown.
   function planLabel(out, name, W, H, maxPx, keep) {
     var lays = breakName(name), nameEm = lays[0].em, i, j, px, rode, best;
-    var keepLay, keepCap;
+    var keepLay;
     // Four points is as far as the type will give ground to find an edge.
     // Further down it is conceding more than being on the bird's own line is
     // worth, and a supporting line at full size reads better than a contour
@@ -1856,12 +1856,12 @@
       for (i = 0; i < lays.length; i++) {
         if (lays[i].rows.length === (keep.lay ? keep.lay.rows.length : 1)) keepLay = lays[i];
       }
-      // Start at the largest size this run could carry the name at, read
-      // straight off the two length rules in fits(), rather than at a ceiling
-      // it could never reach.
-      keepCap = Math.min(maxPx, keep.cand.len / LABEL_RUN);
-      if (keepLay.em > slack) keepCap = Math.min(keepCap, keep.cand.len / (keepLay.em - slack));
-      for (px = keepCap; px >= LABEL_MIN_PX; px -= 0.5) {
+      // The SAME ladder the search itself walks: whole pixels, starting at
+      // the same ceiling. Anything else lands between the rungs - a shortcut
+      // that started at the largest size the run could carry gave one name
+      // 13.22 where the pack had given it 13, and the extra fifth of a pixel
+      // was enough paper to push a neighbour two sizes down.
+      for (px = maxPx; px >= LABEL_MIN_PX; px--) {
         if (!fits(keep.cand, keepLay, px, keepLay.rows.length > 1)) continue;
         rode = set(keep.cand, px, keepLay);
         // hug() as the search itself finishes, so a name that was curled onto
@@ -2318,11 +2318,12 @@
         if (ceiling <= LABEL_MIN_PX) break;
         // Step down from whatever the planner actually chose, not from the
         // ceiling it was given, or a plan that came in well under the
-        // ceiling would cost several rounds to move at all. Proportional,
-        // so a big tile reaches the floor inside the try budget.
+        // ceiling would cost several rounds to move at all. Whole pixels,
+        // because that is the ladder the planner's own search walks and a
+        // ceiling between two rungs would let a name come back a fraction
+        // larger than it went in.
         var from = t.labelPx || ceiling;
-        ceiling = Math.max(LABEL_MIN_PX,
-          Math.min(ceiling - 1, from - Math.max(1, from * 0.12)));
+        ceiling = Math.max(LABEL_MIN_PX, Math.min(ceiling - 1, Math.ceil(from) - 1));
       }
       // No size found clear paper. Then print the name at its natural size
       // rather than at the floor: a name that grazes a neighbour reads, a
