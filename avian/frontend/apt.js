@@ -746,6 +746,9 @@
   // otherwise. Rolled once per window appearance.
   var collagePose = {}; // sci -> 1 perched | 2 flight, persisted across polls;
   // cleared when a bird leaves the window so it rerolls.
+  // The last finished pack, kept so a change of nothing but the lettering
+  // can re-use it instead of moving every bird. See collageLayoutKey.
+  var collageLayout = null;
 
   // Decode and cache each mask once. Sparse cell-list form (only "on"
   // cells) makes collision tests linear in opaque area, not total area.
@@ -2129,44 +2132,111 @@
     return cells;
   }
 
+  function clearLabel(t) {
+    t.labelBox = null; t.labelRows = null; t.labelPx = 0; t.labelCells = null;
+  }
+  // A quiet bird may have a very small tile, but names-on still means every
+  // bird is named. The tangent fallback can carry readable type beyond the
+  // silhouette, and the packer reserves that whole label.
+  function labelCeiling(t) {
+    return Math.max(LABEL_MIN_PX, labelCap(t.fullW, t.fullH));
+  }
+  /* Set one tile's name, at most maxPx tall. Split out of assignLabels
+     because the re-lettering pass asks for the same name again at a lower
+     ceiling until it stops landing on a neighbour. Returns whether the
+     bird ended up with lettering. */
+  function planTileLabel(t, maxPx) {
+    clearLabel(t);
+    var name = SPNAME(t.data);
+    if (!name) return false;
+    var out = outline(t.slug, t.mask);
+    if (!out) return false;
+    // Swap in this name's real ink band for the duration of the search
+    // and the two box builders below, then put the flat default back -
+    // planLabel/labelBounds/labelCells all read LABEL_ASC/LABEL_DESC as
+    // module state, and tiles are planned one at a time, so a save/restore
+    // around one tile is safe and touches nothing else.
+    var vBand = textVBand(name);
+    var savedAsc = LABEL_ASC, savedDesc = LABEL_DESC;
+    LABEL_ASC = vBand.asc; LABEL_DESC = vBand.desc;
+    var plan = planLabel(out, name, t.fullW, t.fullH, maxPx);
+    if (plan) {
+      t.labelPx = plan.px;
+      t.labelRows = plan.rows;
+      t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
+      t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
+    }
+    LABEL_ASC = savedAsc; LABEL_DESC = savedDesc;
+    return !!plan;
+  }
+
   function assignLabels(tiles) {
     // Recomputed before every pack: the shrink loop rescales tiles, and the
     // placement has to be re-measured against the new silhouette size.
     var on = labelsOn();
     tiles.forEach(function (t) {
-      t.labelBox = null; t.labelRows = null; t.labelPx = 0; t.labelCells = null;
-      if (!on) return;
-      var name = SPNAME(t.data);
-      if (!name) return;
-      var out = outline(t.slug, t.mask);
-      if (!out) return;
-      // A quiet bird may have a very small tile, but names-on still means
-      // every bird is named. The tangent fallback can carry readable type
-      // beyond the silhouette, and the packer reserves that whole label.
-      var maxPx = Math.max(LABEL_MIN_PX, labelCap(t.fullW, t.fullH));
-      // Swap in this name's real ink band for the duration of the search
-      // and the two box builders below, then put the flat default back -
-      // planLabel/labelBounds/labelCells all read LABEL_ASC/LABEL_DESC as
-      // module state, and assignLabels runs its tiles one at a time, so a
-      // save/restore around one tile is safe and touches nothing else.
-      var vBand = textVBand(name);
-      var savedAsc = LABEL_ASC, savedDesc = LABEL_DESC;
-      LABEL_ASC = vBand.asc; LABEL_DESC = vBand.desc;
-      var plan = planLabel(out, name, t.fullW, t.fullH, maxPx);
-      if (plan) {
-        t.labelPx = plan.px;
-        t.labelRows = plan.rows;
-        t.labelBox = labelBounds(plan.rows, plan.px);       // overall bbox: render + bounds
-        t.labelCells = labelCells(plan.rows, plan.px);      // sub-boxes: the packer
-      }
-      LABEL_ASC = savedAsc; LABEL_DESC = savedDesc;
-      if (!plan) return;
+      if (!on) { clearLabel(t); return; }
+      planTileLabel(t, labelCeiling(t));
     });
   }
 
-  // Mask-aware nester. tiles: { fullW, fullH, mask, data }. Returns the
-  // same tiles with .x, .y assigned (top-left in viewport coords).
-  function maskPack(tiles, W, H, xBias, yBias, pad) {
+  /* ---- Re-lettering a layout that is being kept ----
+     Nothing here may move a bird: every x, y and tile size comes straight
+     from the pack being re-used. The silhouettes are stamped into a fresh
+     grid first, then each name is set at the largest size whose lettering
+     lands on paper that is still free, and stamped in its turn.
+
+     So a longer name is set smaller rather than allowed to print over its
+     neighbour. That is the trade Cyril chose on 08.09.2026, once it was
+     clear that re-packing is not a gentler option: the spiral stops at the
+     first ring that takes a bird and every later placement reads the grid
+     and the centre of mass left by the earlier ones, so one name of a
+     different width at the start re-arranges the whole collage. */
+  // The pack refused any placement whose lettering left the viewport; the
+  // re-lettering has to hold to the same edge, or a long binomial would run
+  // off the paper instead of into a neighbour.
+  function onPaper(t, layout) {
+    var b = t.labelBox;
+    if (!b) return true;
+    return t.x + b.dx0 >= 0 && t.y + b.dy0 >= 0 &&
+      t.x + b.dx1 <= layout.W && t.y + b.dy1 <= layout.H;
+  }
+  function fitLabelsToLayout(layout) {
+    var tiles = layout.tiles, pad = layout.pad;
+    var g = collageGrid(layout.W, layout.H);
+    tiles.forEach(function (t) {
+      clearLabel(t);
+      if (t.x > -1000) g.stampMask(t, t.x, t.y, pad);
+    });
+    if (!labelsOn()) return;
+    tiles.forEach(function (t) {
+      if (t.x < -1000) return;
+      var ceiling = labelCeiling(t);
+      for (var tries = 0; tries < 14; tries++) {
+        var set = planTileLabel(t, ceiling);
+        if (set && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) break;
+        if (ceiling <= LABEL_MIN_PX) break;
+        // Step down from whatever the planner actually chose, not from the
+        // ceiling it was given, or a plan that came in well under the
+        // ceiling would cost several rounds to move at all. Proportional,
+        // so a big tile reaches the floor inside the try budget.
+        var from = t.labelPx || ceiling;
+        ceiling = Math.max(LABEL_MIN_PX,
+          Math.min(ceiling - 1, from - Math.max(1, from * 0.12)));
+      }
+      // A name that finds no clear paper even at the smallest readable size
+      // is printed anyway: an unnamed bird is worse than a name that grazes
+      // its neighbour, and the pack that reserved this paper had room for a
+      // name here.
+      if (t.labelRows) g.stampLabel(t, t.x, t.y, pad);
+    });
+  }
+
+  /* The paper, as the packer sees it: one bit per GRID_STRIDE square, set
+     where a silhouette or a name already sits. Lifted out of maskPack
+     because the re-lettering pass needs the same picture of a layout that
+     is being kept - see fitLabelsToLayout. */
+  function collageGrid(W, H) {
     var GW = Math.ceil(W / GRID_STRIDE) + 2;
     var GH = Math.ceil(H / GRID_STRIDE) + 2;
     var grid = new Uint8Array(GW * GH);
@@ -2196,7 +2266,7 @@
       if (x1 >= GW) x1 = GW - 1; if (y1 >= GH) y1 = GH - 1;
       return [x0, y0, x1, y1];
     }
-    function collides(tile, tx, ty) {
+    function maskHits(tile, tx, ty) {
       var cells = tile.mask.cells;
       for (var i = 0; i < cells.length; i++) {
         var r = cellRange(tile, tx, ty, cells[i]);
@@ -2207,21 +2277,23 @@
           }
         }
       }
+      return false;
+    }
+    function labelHits(tile, tx, ty) {
       var lc = tile.labelCells;
-      if (lc) {
-        for (var li = 0; li < lc.length; li++) {
-          var lr = boxRange(lc[li], tx, ty);
-          for (var ly = lr[1]; ly <= lr[3]; ly++) {
-            var loff = ly * GW;
-            for (var lx = lr[0]; lx <= lr[2]; lx++) {
-              if (grid[loff + lx]) return true;
-            }
+      if (!lc) return false;
+      for (var li = 0; li < lc.length; li++) {
+        var lr = boxRange(lc[li], tx, ty);
+        for (var ly = lr[1]; ly <= lr[3]; ly++) {
+          var loff = ly * GW;
+          for (var lx = lr[0]; lx <= lr[2]; lx++) {
+            if (grid[loff + lx]) return true;
           }
         }
       }
       return false;
     }
-    function stamp(tile, tx, ty) {
+    function stampMask(tile, tx, ty, pad) {
       var cells = tile.mask.cells;
       for (var i = 0; i < cells.length; i++) {
         var r = cellRange(tile, tx, ty, cells[i]);
@@ -2237,6 +2309,8 @@
           for (var gx = gx0; gx <= gx1; gx++) grid[off + gx] = 1;
         }
       }
+    }
+    function stampLabel(tile, tx, ty, pad) {
       var lc = tile.labelCells;
       if (lc) {
         // Each label sub-box gets a lighter dilation than the silhouette:
@@ -2256,6 +2330,27 @@
         }
       }
     }
+    return {
+      // hits() stays unpadded: the gap around a bird is added once, when it
+      // is stamped, so two birds are never held apart by twice the padding.
+      hits: function (tile, tx, ty) {
+        return maskHits(tile, tx, ty) || labelHits(tile, tx, ty);
+      },
+      hitsLabel: labelHits,
+      stamp: function (tile, tx, ty, pad) {
+        stampMask(tile, tx, ty, pad);
+        stampLabel(tile, tx, ty, pad);
+      },
+      stampMask: stampMask,
+      stampLabel: stampLabel
+    };
+  }
+
+  // Mask-aware nester. tiles: { fullW, fullH, mask, data }. Returns the
+  // same tiles with .x, .y assigned (top-left in viewport coords).
+  function maskPack(tiles, W, H, xBias, yBias, pad) {
+    var g = collageGrid(W, H);
+
     function offGrid(tile, tx, ty) {
       // True if the rendered tile bbox, or any of its label run, leaves
       // the viewport.
@@ -2281,7 +2376,7 @@
         tx = cx - t.fullW / 2;
         ty = cy - t.fullH / 2;
         t.x = tx; t.y = ty;
-        stamp(t, tx, ty);
+        g.stamp(t, tx, ty, pad);
         placed.push(t);
         continue;
       }
@@ -2314,7 +2409,7 @@
           var px = cx + r * xBias * Math.cos(theta) - t.fullW / 2;
           var py = cy + r * yBias * Math.sin(theta) - t.fullH / 2;
           if (offGrid(t, px, py)) continue;
-          if (collides(t, px, py)) continue;
+          if (g.hits(t, px, py)) continue;
           // Distance to existing cluster centre of mass + small noise.
           var dxx = (px + t.fullW / 2 - comX);
           var dyy = (py + t.fullH / 2 - comY);
@@ -2325,7 +2420,7 @@
       }
       if (best) {
         t.x = best.x; t.y = best.y;
-        stamp(t, best.x, best.y);
+        g.stamp(t, best.x, best.y, pad);
         placed.push(t);
       } else {
         // Couldn't fit anywhere - hide off-screen rather than overlap.
@@ -2336,41 +2431,11 @@
     return placed;
   }
 
-  function renderCollage(items, animate) {
-    collage.innerHTML = '';
-    // Drop the previous render's hit-test tiles up front so a click or hover on
-    // the empty-nest state (or a collage that hasn't laid out yet) resolves to
-    // nothing, not to a stale bird from the last populated render. The populated
-    // path repopulates collagePlaced once the new tiles are placed.
-    collagePlaced = [];
-    collageHovered = null;
-    if (!items.length) {
-      // No birds heard yet: show an empty nest where the collage would be, with
-      // the status line beneath it. The frame (shoot.py) overrides the .empty
-      // text for the e-ink panel; the nest illustration is shared by both.
-      collage.innerHTML = '<div class="empty-nest">' +
-        '<img class="nest-img" src="nest.webp" alt="an empty nest" decoding="async">' +
-        '<p class="empty window-empty">' + EMPTY_WINDOW_COPY + '</p></div>';
-      // Bloom the nest in on the same cues as the collage (first load, window
-      // change, view switch); a silent poll/resize renders without animate. The
-      // class self-clears after the worst case so a throttled tab still ends
-      // with the nest visible, mirroring the tile entrance's safety net.
-      if (animate) {
-        var enest = collage.firstChild;
-        enest.classList.add('entering');
-        clearTimeout(collageEntranceT);
-        collageEntranceT = setTimeout(function () { enest.classList.remove('entering'); }, 900);
-      }
-      return;
-    }
-    // Silhouettes (DIMS/MASKS) load async from dims.json/masks.json; until
-    // they arrive we cannot pack. Defer and retry, like the !W/!H case below.
-    // (The empty-nest path above needs no silhouettes and already returned.)
-    if (!tablesReady) { setTimeout(function () { renderCollage(items, animate); }, 80); return; }
-    if (labelsOn() && !labelFontReady) { setTimeout(function () { renderCollage(items, animate); }, 60); return; }
-    var W = collage.clientWidth, H = collage.clientHeight;
-    if (!W || !H) { setTimeout(function () { renderCollage(items, animate); }, 80); return; }
-
+  /* Everything that decides where the birds go: a tile per bird, sized from
+     its detection count, the names planned, the spiral pack, shrink-to-fit
+     and re-centring. Split out of renderCollage so the result can be kept
+     and re-used across a change of lettering. */
+  function packCollage(items, W, H) {
     // Tuning depends on bird count - same viewport, very different
     // pack densities for 6 vs 48 birds.
     var T = tuning(items.length);
@@ -2496,6 +2561,93 @@
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
       placed.forEach(function (t) { if (t.x > -1000) { t.x += dx; t.y += dy; } });
     }
+    return { tiles: placed, pad: pad, W: W, H: H };
+  }
+
+  /* What may move a bird, as one string. The names are deliberately absent:
+     a bird moves when the birds themselves change, when one is heard more
+     often than another, when a pose is rolled, when the window is resized or
+     when the names are switched off altogether - not when a name is spelled
+     differently. */
+  function collageLayoutKey(items, W, H) {
+    return [Math.round(W), Math.round(H), labelsOn() ? 'names' : 'bare',
+      items.map(function (s) {
+        return s.sci + ':' + (+s.n || 0) + ':' + (collagePose[s.sci] || 0);
+      }).join(',')].join('|');
+  }
+  // The lettering itself, so a poll that brings the same names again does
+  // not re-set every one of them.
+  function collageTextKey(items) {
+    return items.map(function (s) { return SPNAME(s); }).join('\u0001');
+  }
+
+  function renderCollage(items, animate) {
+    collage.innerHTML = '';
+    // Drop the previous render's hit-test tiles up front so a click or hover on
+    // the empty-nest state (or a collage that hasn't laid out yet) resolves to
+    // nothing, not to a stale bird from the last populated render. The populated
+    // path repopulates collagePlaced once the new tiles are placed.
+    collagePlaced = [];
+    collageHovered = null;
+    if (!items.length) {
+      // Nothing packed, so nothing to re-use next time round.
+      collageLayout = null;
+      // No birds heard yet: show an empty nest where the collage would be, with
+      // the status line beneath it. The frame (shoot.py) overrides the .empty
+      // text for the e-ink panel; the nest illustration is shared by both.
+      collage.innerHTML = '<div class="empty-nest">' +
+        '<img class="nest-img" src="nest.webp" alt="an empty nest" decoding="async">' +
+        '<p class="empty window-empty">' + EMPTY_WINDOW_COPY + '</p></div>';
+      // Bloom the nest in on the same cues as the collage (first load, window
+      // change, view switch); a silent poll/resize renders without animate. The
+      // class self-clears after the worst case so a throttled tab still ends
+      // with the nest visible, mirroring the tile entrance's safety net.
+      if (animate) {
+        var enest = collage.firstChild;
+        enest.classList.add('entering');
+        clearTimeout(collageEntranceT);
+        collageEntranceT = setTimeout(function () { enest.classList.remove('entering'); }, 900);
+      }
+      return;
+    }
+    // Silhouettes (DIMS/MASKS) load async from dims.json/masks.json; until
+    // they arrive we cannot pack. Defer and retry, like the !W/!H case below.
+    // (The empty-nest path above needs no silhouettes and already returned.)
+    if (!tablesReady) { setTimeout(function () { renderCollage(items, animate); }, 80); return; }
+    if (labelsOn() && !labelFontReady) { setTimeout(function () { renderCollage(items, animate); }, 60); return; }
+    var W = collage.clientWidth, H = collage.clientHeight;
+    if (!W || !H) { setTimeout(function () { renderCollage(items, animate); }, 80); return; }
+
+    // A change of lettering must not move a bird, so the finished pack is
+    // kept and re-used whenever nothing that may legitimately move one has
+    // changed. Only the names are then re-set, into the paper that pack
+    // left free.
+    var key = collageLayoutKey(items, W, H);
+    var text = collageTextKey(items);
+    var layout;
+    if (collageLayout && collageLayout.key === key) {
+      layout = collageLayout;
+      // Same birds at the same counts, but this is a fresh payload: point
+      // each tile at its new row so titles and tooltips read from it.
+      var bySci = {};
+      items.forEach(function (row) { bySci[row.sci] = row; });
+      layout.tiles.forEach(function (t) {
+        if (bySci[t.data.sci]) t.data = bySci[t.data.sci];
+      });
+      if (layout.text !== text) {
+        fitLabelsToLayout(layout);
+        layout.text = text;
+      }
+    } else {
+      layout = packCollage(items, W, H);
+      // The pose of a bird seen for the first time is rolled inside the
+      // pack, so the key is taken again afterwards - otherwise the very
+      // next render would miss and pack again.
+      layout.key = collageLayoutKey(items, W, H);
+      layout.text = text;
+      collageLayout = layout;
+    }
+    var placed = layout.tiles;
 
     placed.forEach(function (r) {
       var s = r.data;

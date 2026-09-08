@@ -241,6 +241,27 @@ check(/'&com=' \+ encodeURIComponent\(com\)/.test(apt),
 check(!/&com=' \+ encodeURIComponent\(SPNAME/.test(apt),
   'the name mode never leaks into the illustration request');
 
+/* ---- a change of lettering never moves a bird ----
+   The packer is chaotic by nature: the spiral stops at the first ring that
+   takes a bird, and every later placement reads the occupancy grid and the
+   centre of mass the earlier ones left. One name of a different width at
+   the start therefore re-arranges the whole collage, which is what made
+   switching language or name mode look like a reshuffle. The finished pack
+   is kept and re-used instead, and only the names are re-set into the paper
+   it left free. Two invariants hold that in place. */
+const layoutKeyFn = /function collageLayoutKey\(items, W, H\) \{[\s\S]*?\n  \}/.exec(apt);
+check(!!layoutKeyFn, 'apt.js keys the kept layout');
+check(!/SPNAME|\.com\b/.test(layoutKeyFn[0]),
+  'the layout key ignores the names, or a change of lettering would re-pack');
+check(/collageLayout && collageLayout\.key === key/.test(apt),
+  'a matching key re-uses the pack instead of running it again');
+const refitFn = /function fitLabelsToLayout\(layout\) \{[\s\S]*?\n  \}/.exec(apt);
+check(!!refitFn, 'apt.js re-letters a kept layout in place');
+check(!/\bt\.x\s*=[^=]|\bt\.y\s*=[^=]/.test(refitFn[0]),
+  're-lettering never assigns a position: no bird may move');
+check(/hitsLabel\(t, t\.x, t\.y\)/.test(refitFn[0]),
+  'and it checks the new lettering against the paper the pack left free');
+
 /* ---- the navigation and the code agree on which views exist ----
    The Atlas is currently withdrawn, which takes two edits: the flag in
    apt.js and the button in index.html. Restoring only one of them leaves
