@@ -2211,10 +2211,19 @@
     if (!labelsOn()) return;
     tiles.forEach(function (t) {
       if (t.x < -1000) return;
-      var ceiling = labelCeiling(t);
+      // A name rides its own bird's outline, so the bird is lifted out of
+      // the grid while its name is measured. Leaving it in would refuse
+      // every size and drive the whole collage down to the floor, which is
+      // exactly what it did.
+      g.liftMask(t, t.x, t.y, pad);
+      var ceiling = labelCeiling(t), full = null, fitted = false;
       for (var tries = 0; tries < 14; tries++) {
         var set = planTileLabel(t, ceiling);
-        if (set && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) break;
+        // Keep the first plan, the one at the natural size, as the fallback.
+        if (set && !full) {
+          full = { px: t.labelPx, rows: t.labelRows, box: t.labelBox, cells: t.labelCells };
+        }
+        if (set && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) { fitted = true; break; }
         if (ceiling <= LABEL_MIN_PX) break;
         // Step down from whatever the planner actually chose, not from the
         // ceiling it was given, or a plan that came in well under the
@@ -2224,10 +2233,14 @@
         ceiling = Math.max(LABEL_MIN_PX,
           Math.min(ceiling - 1, from - Math.max(1, from * 0.12)));
       }
-      // A name that finds no clear paper even at the smallest readable size
-      // is printed anyway: an unnamed bird is worse than a name that grazes
-      // its neighbour, and the pack that reserved this paper had room for a
-      // name here.
+      // No size found clear paper. Then print the name at its natural size
+      // rather than at the floor: a name that grazes a neighbour reads, a
+      // name shrunk to nine pixels for nothing does not.
+      if (!fitted && full) {
+        t.labelPx = full.px; t.labelRows = full.rows;
+        t.labelBox = full.box; t.labelCells = full.cells;
+      }
+      g.stampMask(t, t.x, t.y, pad);
       if (t.labelRows) g.stampLabel(t, t.x, t.y, pad);
     });
   }
@@ -2293,24 +2306,33 @@
       }
       return false;
     }
-    function stampMask(tile, tx, ty, pad) {
+    // Cells count what covers them rather than just recording that
+    // something does, so one tile's own bird can be lifted out of the
+    // picture again without erasing a neighbour that overlapped its
+    // padding. fitLabelsToLayout needs exactly that: a bird must never be
+    // the reason its own name is refused.
+    function mark(i, delta) {
+      var v = grid[i] + delta;
+      grid[i] = v < 0 ? 0 : (v > 255 ? 255 : v);
+    }
+    function paintMask(tile, tx, ty, pad, delta) {
       var cells = tile.mask.cells;
       for (var i = 0; i < cells.length; i++) {
         var r = cellRange(tile, tx, ty, cells[i]);
         // Dilate the stamped footprint by `pad` cells so the next bird can't
         // pack right up against this one - a uniform gap around every
-        // silhouette. collides() stays unpadded, so the gap is added once.
+        // silhouette. hits() stays unpadded, so the gap is added once.
         var gy0 = r[1] - pad, gy1 = r[3] + pad;
         var gx0 = r[0] - pad, gx1 = r[2] + pad;
         if (gy0 < 0) gy0 = 0; if (gx0 < 0) gx0 = 0;
         if (gy1 >= GH) gy1 = GH - 1; if (gx1 >= GW) gx1 = GW - 1;
         for (var gy = gy0; gy <= gy1; gy++) {
           var off = gy * GW;
-          for (var gx = gx0; gx <= gx1; gx++) grid[off + gx] = 1;
+          for (var gx = gx0; gx <= gx1; gx++) mark(off + gx, delta);
         }
       }
     }
-    function stampLabel(tile, tx, ty, pad) {
+    function paintLabel(tile, tx, ty, pad, delta) {
       var lc = tile.labelCells;
       if (lc) {
         // Each label sub-box gets a lighter dilation than the silhouette:
@@ -2325,7 +2347,7 @@
           if (ly1 >= GH) ly1 = GH - 1; if (lx1 >= GW) lx1 = GW - 1;
           for (var gy2 = ly0; gy2 <= ly1; gy2++) {
             var off2 = gy2 * GW;
-            for (var gx2 = lx0; gx2 <= lx1; gx2++) grid[off2 + gx2] = 1;
+            for (var gx2 = lx0; gx2 <= lx1; gx2++) mark(off2 + gx2, delta);
           }
         }
       }
@@ -2338,11 +2360,12 @@
       },
       hitsLabel: labelHits,
       stamp: function (tile, tx, ty, pad) {
-        stampMask(tile, tx, ty, pad);
-        stampLabel(tile, tx, ty, pad);
+        paintMask(tile, tx, ty, pad, 1);
+        paintLabel(tile, tx, ty, pad, 1);
       },
-      stampMask: stampMask,
-      stampLabel: stampLabel
+      stampMask: function (tile, tx, ty, pad) { paintMask(tile, tx, ty, pad, 1); },
+      liftMask: function (tile, tx, ty, pad) { paintMask(tile, tx, ty, pad, -1); },
+      stampLabel: function (tile, tx, ty, pad) { paintLabel(tile, tx, ty, pad, 1); }
     };
   }
 
