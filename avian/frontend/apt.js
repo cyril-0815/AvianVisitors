@@ -2244,10 +2244,23 @@
   }
   function fitLabelsToLayout(layout) {
     var tiles = layout.tiles, pad = layout.pad;
+    // The gap a bird keeps from a name is not the gap it keeps from another
+    // bird. The pack stamped each bird with the full `pad` halo, but a bird
+    // placed LATER only ever had to clear the lighter halo around a name
+    // already written - it was the name that was dilated, by lpad, and the
+    // bird that was tested bare. Measuring a name against every bird at the
+    // full halo therefore refuses settings the pack itself had approved, and
+    // the refusals cascade: one name gives way, its neighbour is measured
+    // against the shifted picture and gives way in turn, and a round trip
+    // never comes back to where it started. So every bird starts at the
+    // light halo, and each is promoted to the full one once its own name is
+    // set - at which point it is an EARLIER bird for everything that follows,
+    // exactly as during the pack.
+    var lpad = Math.min(pad, COLLAGE_LABEL_PAD);
     var g = collageGrid(layout.W, layout.H);
     tiles.forEach(function (t) {
       clearLabel(t);
-      if (t.x > -1000) g.stampMask(t, t.x, t.y, pad);
+      if (t.x > -1000) g.stampMask(t, t.x, t.y, lpad);
     });
     if (!labelsOn()) return;
     tiles.forEach(function (t) {
@@ -2256,7 +2269,7 @@
       // the grid while its name is measured. Leaving it in would refuse
       // every size and drive the whole collage down to the floor, which is
       // exactly what it did.
-      g.liftMask(t, t.x, t.y, pad);
+      g.liftMask(t, t.x, t.y, lpad);
       // The run this bird's name rode when the layout was packed. Passing it
       // back holds the new name in the same place; only its size gives way.
       var keep = t.labelPlan;
@@ -2265,7 +2278,8 @@
         var got = planTileLabel(t, ceiling, keep);
         // Keep the first plan, the one at the natural size, as the fallback.
         if (got && !full) {
-          full = { px: t.labelPx, rows: t.labelRows, box: t.labelBox, cells: t.labelCells };
+          full = { px: t.labelPx, rows: t.labelRows, box: t.labelBox,
+                   cells: t.labelCells, plan: t.labelPlan };
         }
         if (got && onPaper(t, layout) && !g.hitsLabel(t, t.x, t.y)) { fitted = true; break; }
         if (ceiling <= LABEL_MIN_PX) break;
@@ -2283,11 +2297,16 @@
       if (!fitted && full) {
         t.labelPx = full.px; t.labelRows = full.rows;
         t.labelBox = full.box; t.labelCells = full.cells;
+        // The plan too, or the next name on this bird would be asked for the
+        // line-break of a setting that was tried and thrown away.
+        t.labelPlan = full.plan;
       }
       // The kept run could not carry this name at all. Rather than leave the
       // bird nameless, let the planner choose freely this once - the only
       // case in which a name moves.
       if (!t.labelRows && keep) planTileLabel(t, labelCeiling(t));
+      // Promoted to the full halo now that its own name is settled; pad
+      // covers everything lpad did, so the light stamp needs no undoing.
       g.stampMask(t, t.x, t.y, pad);
       if (t.labelRows) g.stampLabel(t, t.x, t.y, pad);
     });
