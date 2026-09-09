@@ -183,4 +183,27 @@ check(body.indexOf('Confidence') === -1,
   'the counter applies no confidence filter of its own - CONFIDENCE already decided what '
   + 'reached the database, so filtering again would make the count disagree with the screen');
 
+/* ---- the heading names the window ----
+   With the pills gone the title is the only thing on the kiosk screen
+   that says which period is on show, so it has to follow the window -
+   including when the automatic picker moves it, which no click reports. */
+const i18n = fs.readFileSync(path.join(repo, 'avian', 'frontend', 'i18n.js'), 'utf8');
+const TITLE_KEYS = [
+  'title.heardLastHour', 'title.heardLast12h', 'title.heardLast24h',
+  'title.heardLast7d', 'title.heardAll'
+];
+TITLE_KEYS.forEach(function (key) {
+  const seen = (i18n.match(new RegExp("'" + key + "':", 'g')) || []).length;
+  check(seen === 3, key + ' is written in all three dictionaries (found ' + seen + ')');
+  check(apt.indexOf("'" + key + "'") !== -1, 'apt.js can choose ' + key);
+});
+check(/function titleKeyForWindow\(hours\)/.test(apt),
+  'apt.js picks the heading from the window');
+const applyBody = apt.slice(applyFrom, applyTo);
+check(applyBody.indexOf('refreshViewTitles()') !== -1,
+  'an automatic window change re-letters the heading - otherwise the kiosk screen would '
+  + 'silently show one period under the name of another');
+check(/writeLS\('bird:window'[\s\S]{0,200}refreshViewTitles\(\)/.test(apt),
+  'a window picked by hand re-letters the heading too');
+
 process.stdout.write('auto window tests passed (' + checks + ' checks)\n');

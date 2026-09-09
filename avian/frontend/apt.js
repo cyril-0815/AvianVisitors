@@ -108,14 +108,41 @@
   var btns = [].slice.call(slider.querySelectorAll('button'));
   var winPick = document.getElementById('winPick');
 
+  // The selected time window, in hours. Resolved this early because the
+  // view titles below name it.
+  var currentHours = +readLS('bird:window', '24') || 24;
+
   // Each view's title text. The shared static-head shows one of these
   // based on the current view; identical adjacent values mean the title
-  // stays put with no fade (collage and stats both say Heard Recently).
-  // Resolved once here rather than at every use: both are pasted into a
-  // dozen innerHTML templates. Switching the language re-resolves them,
-  // see the I18N.onChange handler below - anything else added here has to
-  // be re-resolved there too.
-  var VIEW_TITLES = [T('title.heardRecently'), T('title.heardRecently'), T('title.avianAtlas')];
+  // stays put with no fade (collage and stats say the same thing).
+  // Resolved here rather than at every use: they are pasted into a dozen
+  // innerHTML templates. Switching the language re-resolves them, see the
+  // I18N.onChange handler below - anything else added here has to be
+  // re-resolved there too.
+  //
+  // The title names the window it is showing rather than saying "heard
+  // recently". On the kiosk screen the pills are gone and the window
+  // moves by itself, so without this nothing on screen says whether you
+  // are looking at the last hour or the last week.
+  function titleKeyForWindow(hours) {
+    if (hours <= 1) return 'title.heardLastHour';
+    if (hours <= 12) return 'title.heardLast12h';
+    if (hours <= 24) return 'title.heardLast24h';
+    if (hours <= 168) return 'title.heardLast7d';
+    return 'title.heardAll';
+  }
+  function resolveViewTitles() {
+    var heard = T(titleKeyForWindow(currentHours));
+    return [heard, heard, T('title.avianAtlas')];
+  }
+  var VIEW_TITLES = resolveViewTitles();
+  // Called after every window change, by hand or automatic. setTitleForView
+  // fades only when the text actually differs, so a change from 12H to 24H
+  // fades once and a change that lands on the same wording does nothing.
+  function refreshViewTitles() {
+    VIEW_TITLES = resolveViewTitles();
+    setTitleForView(currentView);
+  }
   var EMPTY_WINDOW_COPY = T('empty.window');
   var staticHead = document.querySelector('.static-head');
   var staticTitle = document.getElementById('staticTitle');
@@ -495,7 +522,6 @@
     }
   });
   var winBtns = [].slice.call(winPick.querySelectorAll('button'));
-  var currentHours = +readLS('bird:window', '24') || 24;
   winBtns.forEach(function (b) {
     b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
   });
@@ -505,6 +531,7 @@
       currentHours = +b.dataset.h;
       writeLS('bird:window', String(currentHours));
       syncPill(winPick);
+      refreshViewTitles();
       // Actual data refresh is wired below via refreshRecent().
     });
   });
@@ -603,7 +630,7 @@
   if (I18N && I18N.onChange) {
     I18N.onChange(function (what) {
       LANG = I18N.lang;
-      VIEW_TITLES = [T('title.heardRecently'), T('title.heardRecently'), T('title.avianAtlas')];
+      VIEW_TITLES = resolveViewTitles();
       EMPTY_WINDOW_COPY = T('empty.window');
       if (staticTitle) staticTitle.textContent = VIEW_TITLES[currentView];
       applyWeekdayLetters();
@@ -5639,6 +5666,9 @@
       b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
     });
     syncPill(winPick);
+    // The heading is the only thing on the kiosk screen that says which
+    // period is on show, so it has to follow the automatic change too.
+    refreshViewTitles();
     if (currentHours < 1000000) hourlyDate = null;
     updateStatsDateNav();
     return true;
