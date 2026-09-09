@@ -59,6 +59,18 @@
     'names.sci': 'lat',
 
     'title.heardRecently': 'Heard Recently',
+    /* The title spells the time window out. On the kiosk screen the
+       window pills are gone (?chrome=off) and the window moves on its
+       own, so the heading is the only thing left that says what period
+       is on show. Written out per window rather than composed from a
+       stem plus a fragment: three languages do not agree on where the
+       span goes in the sentence. ALL names no span at all, because it
+       has none. */
+    'title.heardLastHour': 'Heard in the Last Hour',
+    'title.heardLast12h': 'Heard in the Last 12 Hours',
+    'title.heardLast24h': 'Heard in the Last 24 Hours',
+    'title.heardLast7d': 'Heard in the Last 7 Days',
+    'title.heardAll': 'Birds Heard',
     'title.avianAtlas': 'Avian Atlas',
     'empty.window': 'no detections heard in this window',
 
@@ -252,6 +264,11 @@
     'names.sci': 'lat',
 
     'title.heardRecently': 'Kürzlich gehört',
+    'title.heardLastHour': 'Gehört in der letzten Stunde',
+    'title.heardLast12h': 'Gehört in den letzten 12 Stunden',
+    'title.heardLast24h': 'Gehört in den letzten 24 Stunden',
+    'title.heardLast7d': 'Gehört in den letzten 7 Tagen',
+    'title.heardAll': 'Gehörte Vögel',
     'title.avianAtlas': 'Vogel-Atlas',
     'empty.window': 'keine Erkennungen in diesem Zeitraum',
 
@@ -443,6 +460,11 @@
     'names.sci': 'lat',
 
     'title.heardRecently': 'Entendus récemment',
+    'title.heardLastHour': 'Entendus durant la dernière heure',
+    'title.heardLast12h': 'Entendus durant les 12 dernières heures',
+    'title.heardLast24h': 'Entendus durant les 24 dernières heures',
+    'title.heardLast7d': 'Entendus durant les 7 derniers jours',
+    'title.heardAll': 'Oiseaux entendus',
     'title.avianAtlas': 'Atlas des oiseaux',
     'empty.window': 'aucune détection sur cette période',
 
