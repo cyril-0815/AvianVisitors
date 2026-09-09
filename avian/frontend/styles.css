@@ -228,6 +228,11 @@
      rule. */
   .top { gap: 10px; justify-content: flex-start; }
   .top .lang-pick[hidden], .top .name-pick[hidden] { display: none; }
+  /* ?chrome=off clears the screen for the kiosk display: header, menu and
+     the bottom slider all go. Same reason as the rule above - each of
+     them sets its own display, which plain [hidden] cannot beat. All
+     three are position:fixed, so nothing reflows when they leave. */
+  .top[hidden], .menu-shell[hidden], .slider[hidden] { display: none; }
   .top .lang-pick button, .top .name-pick button { padding: 9px 12px; }
   .menu-btn {
     background: var(--paper); border: 0; color: var(--ink);

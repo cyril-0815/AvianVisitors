@@ -168,12 +168,53 @@
   // view the visitor is already on.
   function goAtlas() { if (ATLAS_ENABLED) go(2); }
 
+  /* ---- Kiosk URL parameters ----
+     The display screen runs a Raspberry Pi with no keyboard and no
+     mouse: whatever it shows, it shows until someone walks over with a
+     laptop. Everything that is normally a control therefore has to be
+     settable in the URL that Chromium is started with.
+
+     Single-purpose parameters on purpose, not one ?kiosk=1 that hides
+     four decisions in the code: the display is re-aimed by editing one
+     line in ~/.xinitrc, with no code change and no git pull on either
+     Pi. ?lang= and ?names= already worked this way; these join them.
+
+       ?view=collage|stats  pins the sheet the page opens on
+       ?window=auto         picks the time window automatically
+       ?minspecies=N        the automatic picker's threshold (default 4)
+       ?chrome=off          removes every control from the screen */
+  function qsParam(name) {
+    try {
+      var match = new RegExp('[?&]' + name + '=([^&#]*)').exec(String(location.search || ''));
+      return match ? decodeURIComponent(match[1]).toLowerCase() : '';
+    } catch (e) { return ''; }
+  }
+  var CHROME_OFF = qsParam('chrome') === 'off';
+  var VIEW_PINNED = (function () {
+    var value = qsParam('view');
+    return value === 'collage' ? 0 : (value === 'stats' ? 1 : -1);
+  })();
+  var AUTO_WINDOW = qsParam('window') === 'auto';
+  // The ladder is the frontend's own set of windows in hours, ALL last.
+  var AUTO_LADDER = [1, 12, 24, 168, 1000000];
+  var AUTO_MIN = (function () {
+    var n = parseInt(qsParam('minspecies'), 10);
+    return (isFinite(n) && n >= 1 && n <= 99) ? n : 4;
+  })();
+  // Asymmetric on purpose - see the automatic picker further down.
+  var AUTO_MIN_DOWN = AUTO_MIN + 1;
+  var AUTO_DOWN_CHECKS = 3;
+
   var VIEW_STORAGE_KEY = 'bird:view';
   function readSavedView() {
-    var saved = parseInt(readLS(VIEW_STORAGE_KEY, '0'), 10);
     // A visitor who left on the Atlas must not come back to a view that
     // no longer has a button.
     var last = ATLAS_ENABLED ? VIEW_TITLES.length - 1 : 1;
+    // ?view= outranks the saved sheet the way ?lang= outranks the saved
+    // language: the kiosk must open where it was told to, whatever the
+    // last person to touch that browser was looking at.
+    if (VIEW_PINNED >= 0) return Math.min(VIEW_PINNED, last);
+    var saved = parseInt(readLS(VIEW_STORAGE_KEY, '0'), 10);
     return saved >= 0 && saved <= last ? saved : 0;
   }
   // Resolve the saved sheet before routing so refreshes land directly on
@@ -520,6 +561,23 @@
         });
       });
     }
+  }
+
+  // ---- Kiosk chrome ----
+  // ?chrome=off takes every control off the screen: the header pills, the
+  // menu in the opposite corner and the collage/stats slider at the
+  // bottom. On a screen nobody can touch they are decoration that can
+  // only ever be wrong, and the collage gets the whole surface.
+  // Every one of them is position:fixed, so removing them moves nothing.
+  // The pills are hidden individually as well as through the header, so
+  // the wiring below skips them the way it skips a pinned language.
+  if (CHROME_OFF) {
+    ['winPick', 'langPick', 'namePick', 'slider', 'menuShell'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.hidden = true;
+    });
+    var topBar = document.querySelector('header.top');
+    if (topBar) topBar.hidden = true;
   }
 
   /* ---- Re-resolving the page in place ----
@@ -5504,10 +5562,118 @@
     });
   }
 
+  /* ---- Automatic time window (?window=auto) ----
+     The kiosk screen cannot be re-pointed by hand, so it points itself:
+     show the shortest window that still holds enough birds to make a
+     collage. 1H is the liveliest view and the first choice; a quiet hour
+     falls through to 12H, then 24H, 7D and finally ALL.
+
+     Why a brake is needed. The page never reloads, it polls every 30
+     seconds, so this decision is taken 120 times an hour. A window
+     sitting exactly on the threshold would therefore flip back and forth
+     every half minute, and a flip is not a small thing: the collage
+     repacks, so every bird changes size and position. On a screen
+     standing in a room that reads as the display glitching.
+
+     The brake has two parts, both deliberately asymmetric. Climbing is
+     immediate, because an under-filled screen is the failure we are
+     fixing and it must not wait. Descending needs one more species than
+     climbing did (minspecies+1) and needs to hold for three checks in a
+     row, roughly a minute and a half, so a single late-arriving song
+     cannot pull the screen back down.
+
+     The counts come from one small endpoint of their own, not from
+     walking the ladder with `recent`. See avian/api/birdnet-api.php. */
+
+  // >>> autowindow-decide  (tests/test_auto_window.js extracts this block verbatim)
+  // The rules on their own: no DOM, no fetch, no clock. Takes the species
+  // count per window plus the run of agreeing checks so far, and returns
+  // the window to show next together with the carried-over run.
+  function autoWindowChoice(input) {
+    var ladder = input.ladder;
+    var counts = input.counts || {};
+    var minUp = input.minUp;
+    var minDown = input.minDown;
+    var needed = input.checks;
+    var target = input.downTarget;
+    var streak = input.downStreak || 0;
+    function at(hours) { return +counts[String(hours)] || 0; }
+    var i = ladder.indexOf(input.current);
+    if (i < 0) i = 0;
+
+    // Climb: the window on screen is too thin. Take the first larger one
+    // that clears the bar and drop any pending descent.
+    if (at(ladder[i]) < minUp) {
+      for (var up = i + 1; up < ladder.length; up++) {
+        if (at(ladder[up]) >= minUp) return { hours: ladder[up], downTarget: null, downStreak: 0 };
+      }
+      // Nothing larger clears it either, so this is a young station or an
+      // empty database. ALL is the ceiling: stand there and show what
+      // there is rather than climbing into nothing.
+      return { hours: ladder[ladder.length - 1], downTarget: null, downStreak: 0 };
+    }
+
+    // Descend: only to a shorter window that is comfortably full, and
+    // only once it has been that way for `needed` checks running.
+    var candidate = null;
+    for (var down = 0; down < i; down++) {
+      if (at(ladder[down]) >= minDown) { candidate = ladder[down]; break; }
+    }
+    if (candidate === null) return { hours: ladder[i], downTarget: null, downStreak: 0 };
+    var run = (candidate === target) ? streak + 1 : 1;
+    if (run < needed) return { hours: ladder[i], downTarget: candidate, downStreak: run };
+    return { hours: candidate, downTarget: null, downStreak: 0 };
+  }
+  // <<< autowindow-decide
+
+  var autoDownTarget = null;
+  var autoDownStreak = 0;
+
+  function autoApplyWindow(hours) {
+    if (hours === currentHours) return false;
+    currentHours = hours;
+    // No writeLS on purpose. The automatic choice overlays the saved one
+    // the way ?lang= overlays the saved language; it must not overwrite
+    // what somebody picked by hand in this browser.
+    winBtns.forEach(function (b) {
+      b.setAttribute('aria-current', (+b.dataset.h === currentHours) ? 'true' : 'false');
+    });
+    syncPill(winPick);
+    if (currentHours < 1000000) hourlyDate = null;
+    updateStatsDateNav();
+    return true;
+  }
+
+  // Resolves to true when the window actually changed, so the caller can
+  // let the collage bloom. Never rejects: a count that does not arrive
+  // leaves the screen exactly as it is and the next poll tries again.
+  function autoDecide() {
+    return fetchJson('./avian/api/birdnet-api.php?action=windowcounts')
+      .then(function (j) {
+        if (!j || !j.hours) return false;
+        var next = autoWindowChoice({
+          ladder: AUTO_LADDER, counts: j.hours, current: currentHours,
+          minUp: AUTO_MIN, minDown: AUTO_MIN_DOWN, checks: AUTO_DOWN_CHECKS,
+          downTarget: autoDownTarget, downStreak: autoDownStreak
+        });
+        autoDownTarget = next.downTarget;
+        autoDownStreak = next.downStreak;
+        return autoApplyWindow(next.hours);
+      })
+      .catch(function (e) {
+        console.warn('window counts fetch failed', e);
+        return false;
+      });
+  }
+
   // Kick off the initial fetch. Renders pull from DATA as soon as it
   // populates; until then the page sits with empty histograms + lists.
   // animate=true so the collage blooms in on first load.
-  refreshAll(true);
+  // With the automatic picker on, the window is settled first, so the
+  // first thing drawn is already the right one and the screen never
+  // shows a stale window for one poll.
+  if (AUTO_WINDOW) autoDecide().then(function () { refreshAll(true); });
+  else refreshAll(true);
 
   // Hook into the window picker so the data refetches on change. Pass
   // animate=true so the collage blooms (the silent poll passes nothing).
@@ -5528,11 +5694,19 @@
   // resumes (with an immediate fetch) when it becomes visible again.
   var POLL_MS = 30 * 1000;
   var pollTimer = null;
+  // One tick. With the automatic picker on, the window is decided before
+  // the data is fetched, so a poll never draws the old window's birds and
+  // then swaps them a moment later. A window change blooms; a plain poll
+  // does not.
+  function pollOnce() {
+    if (!AUTO_WINDOW) return refreshAll();
+    return autoDecide().then(function (switched) { return refreshAll(switched); });
+  }
   function startPolling() {
     stopPolling();
     pollTimer = setInterval(function () {
       if (document.hidden) return;
-      refreshAll();
+      pollOnce();
     }, POLL_MS);
   }
   function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
@@ -5542,7 +5716,7 @@
     } else {
       // Force an immediate refresh on return so the user sees fresh
       // data right away, then resume normal polling cadence.
-      refreshAll();
+      pollOnce();
       startPolling();
     }
   });

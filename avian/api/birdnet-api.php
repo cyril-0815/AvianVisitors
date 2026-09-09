@@ -6,6 +6,8 @@
 //   stats       - totals (detections, unique species, today, last hour)
 //   lifelist    - every species with first_seen, last_seen, total_count
 //   recent      - &hours=N (default 24): species heard in the window
+//   windowcounts- distinct species per time window, for the kiosk's
+//                 automatic window picker (?window=auto)
 //   rhythm      - &hours=N: minute-by-minute rhythm for the selected window
 //   hourly      - species-by-hour ledger for one calendar day
 //   species     - &sci=<sci_name>: per-species detail page
@@ -415,6 +417,45 @@ switch ($action) {
             'last_date' => $rs ? $rs[count($rs) - 1]['date'] : null,
             'days' => $rs,
             'as_of' => date('c'),
+        ]);
+        break;
+    }
+
+    case 'windowcounts': {
+        // How many distinct species sit inside each of the frontend's time
+        // windows, and nothing else. The kiosk display (?window=auto) has no
+        // keyboard, so the page picks its own window and needs this answer
+        // every 30 seconds.
+        //
+        // Deliberately one grouped statement rather than one query per rung:
+        // `recent` would answer the same question, but it costs an extra
+        // query per species found, and the ladder would be walked from the
+        // bottom up exactly when the station is quiet.
+        //
+        // No confidence filter here, on purpose. CONFIDENCE in birdnet.conf
+        // decides what is written to the database in the first place, so what
+        // is stored in a window is precisely what the collage draws for it.
+        // A filter here would make the counter disagree with the screen.
+        $ctx = dateContext($db);
+        $bind = [':anchor' => $ctx['anchor']];
+        $ladder = [1, 12, 24, 168, 1000000];
+        $selects = [];
+        foreach ($ladder as $hours) {
+            $selects[] = $hours >= 1000000
+                ? "COUNT(DISTINCT Sci_Name) AS w".$hours
+                : "COUNT(DISTINCT CASE WHEN DATETIME(Date||' '||Time) > "
+                  ."DATETIME(:anchor,'-".$hours." hours') THEN Sci_Name END) AS w".$hours;
+        }
+        $row = one($db,
+          "SELECT ".implode(', ', $selects)." FROM detections "
+        . "WHERE DATETIME(Date||' '||Time) <= DATETIME(:anchor)",
+          $bind
+        );
+        $out = [];
+        foreach ($ladder as $hours) $out[(string)$hours] = (int)($row['w'.$hours] ?? 0);
+        avian_json([
+            'hours' => $out, 'date' => $ctx['date'], 'station_date' => $ctx['today'],
+            'is_today' => $ctx['is_today'], 'anchor' => $ctx['anchor'], 'as_of' => date('c')
         ]);
         break;
     }
