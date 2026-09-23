@@ -4288,8 +4288,16 @@
     'Zonotrichia leucophrys': 'whcspa'
   };
 
+  // The Wikipedia of the page's language, not always the English one.
+  // A search that goes straight to the article, because not every
+  // scientific name is a redirect on every Wikipedia: a direct link
+  // would end on "no such article", the search lands on the right page
+  // or at worst on a list of candidates.
+  var WIKI_LANGS = ['en', 'de', 'fr'];
   function wikiUrl(sci) {
-    return 'https://en.wikipedia.org/wiki/' + encodeURIComponent(sci.replace(/ /g, '_'));
+    var lang = WIKI_LANGS.indexOf(LANG) >= 0 ? LANG : 'en';
+    return 'https://' + lang + '.wikipedia.org/w/index.php?go=Go&search='
+      + encodeURIComponent(String(sci || '').trim());
   }
   function ebirdUrl(sci) {
     var code = EBIRD_CODES[sci];
@@ -8916,6 +8924,10 @@
       document.getElementById('modalRecordings').innerHTML = '<li class="rec-empty">' + escHtml(T('pc.recsFailed')) + '</li>';
     });
 
+    // The read-only copy carries no wiki.php: the lead is English only,
+    // and the link above already leads to the page's own Wikipedia.
+    if (READ_ONLY) return imageReady;
+
     // Wikipedia lead (description + genus / family). `format=6` deliberately
     // changes the cache key after the compact-card sentence-budget pass.
     var loadWiki = WIKI_CACHE[sci]
@@ -8927,7 +8939,9 @@
       if (contentRequest !== POSTCARD_CONTENT_REQUEST) return;
       var desc = document.getElementById('modalDesc');
       renderAboutDescription(desc, j);
-      if (j.source && /^https:\/\/en\.wikipedia\.org\/wiki\//.test(j.source.url || '')) {
+      // The lead's exact article only helps where it is the page's own
+      // language; elsewhere the link keeps pointing at that Wikipedia.
+      if (LANG === 'en' && j.source && /^https:\/\/en\.wikipedia\.org\/wiki\//.test(j.source.url || '')) {
         document.getElementById('modalWiki').href = j.source.url;
       }
     }).catch(function () {
