@@ -233,6 +233,23 @@
      them sets its own display, which plain [hidden] cannot beat. All
      three are position:fixed, so nothing reflows when they leave. */
   .top[hidden], .menu-shell[hidden], .slider[hidden] { display: none; }
+
+  /* Read-only copy (modus.json, see apt.js): no players, because there
+     are no recordings to play, and the stand line where the menu was. */
+  .read-only .postcard-recordings { display: none; }
+  .stand-line {
+    position: fixed; top: 30px; right: 28px; z-index: 31;
+    margin: 0; max-width: 45vw;
+    font-size: 12px; line-height: 1.3; text-align: right;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .stand-line.stale { color: var(--danger); }
+  @media (max-width: 700px) {
+    /* The pills take the whole width up here, so the line sits under them. */
+    .stand-line { top: auto; bottom: 64px; right: 16px; max-width: calc(100vw - 32px); }
+  }
   .top .lang-pick button, .top .name-pick button { padding: 9px 12px; }
   .menu-btn {
     background: var(--paper); border: 0; color: var(--ink);
