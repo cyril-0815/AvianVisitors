@@ -607,6 +607,107 @@
     if (topBar) topBar.hidden = true;
   }
 
+  /* ---- Read-only copy ----
+     The same frontend also runs as a copy on a server away from the Pi,
+     fed with a copy of birds.db that the Pi pushes every five minutes.
+     That copy has no admin API and no recordings, so it must not offer
+     the menu or the players. It says so with a modus.json next to
+     index.html:
+
+       { "modus": "nurlesen", "ort": "Name of the station" }
+
+     The Pi has no such file: the request fails and nothing changes
+     there. The menu stays hidden until the answer is in, so the copy
+     never flashes a menu it cannot serve; on the Pi that costs one
+     local request. In place of the menu the copy shows when the Pi was
+     last heard from, see the stand line further down. */
+  var READ_ONLY = false;
+  var READ_ONLY_PLACE = '';
+  var menuShellEl = document.getElementById('menuShell');
+  if (menuShellEl && !CHROME_OFF) menuShellEl.hidden = true;
+  var MODUS_READY = fetch('./modus.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .catch(function () { return null; })
+    .then(function (j) {
+      READ_ONLY = !!j && j.modus === 'nurlesen';
+      READ_ONLY_PLACE = READ_ONLY && typeof j.ort === 'string' ? j.ort.trim().slice(0, 40) : '';
+      document.documentElement.classList.toggle('read-only', READ_ONLY);
+      if (menuShellEl && !CHROME_OFF) menuShellEl.hidden = READ_ONLY;
+      if (READ_ONLY) startStandLine();
+    });
+
+  /* ---- Stand line (read-only copy only) ----
+     A copy that silently shows old birds is worse than no copy. The Pi
+     therefore sends a sign of life with every push, whether or not a
+     bird was heard, and the copy serves it as lebenszeichen.json:
+
+       { "zeit": "2026-09-23T14:05:00Z" }
+
+     The line always says when that was, so a working station is visible
+     as working, and turns into a warning once the Pi has been silent for
+     longer than STAND_STALE_MS. */
+  // >>> stand-line
+  var STAND_STALE_MS = 30 * 60 * 1000;
+  // Thirty minutes are six missed pushes: one slow upload never trips
+  // it, a station without power or internet always does.
+  function standState(zeit, nowMs) {
+    var ms = typeof zeit === 'string' ? Date.parse(zeit) : NaN;
+    if (!isFinite(ms)) return { kind: 'none', at: null };
+    return { kind: nowMs - ms > STAND_STALE_MS ? 'stale' : 'ok', at: ms };
+  }
+  // <<< stand-line
+  var STAND_POLL_MS = 60 * 1000;
+  var standZeit = null;
+  var standEl = null;
+  function standWhen(ms) {
+    try {
+      return new Date(ms).toLocaleString(TLOC(), {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+    } catch (e) { return new Date(ms).toISOString().slice(0, 16).replace('T', ' '); }
+  }
+  function renderStandLine() {
+    if (!standEl) return;
+    var state = standState(standZeit, Date.now());
+    var place = READ_ONLY_PLACE;
+    var text;
+    if (state.kind === 'ok') {
+      text = T('stand.ok', { when: standWhen(state.at) });
+    } else if (state.kind === 'stale') {
+      text = T(place ? 'stand.stalePlace' : 'stand.stale', { place: place, when: standWhen(state.at) });
+    } else {
+      text = T(place ? 'stand.nonePlace' : 'stand.none', { place: place });
+    }
+    standEl.textContent = text;
+    standEl.classList.toggle('stale', state.kind !== 'ok');
+  }
+  function loadStandLine() {
+    return fetch('./lebenszeichen.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (j) {
+        standZeit = j && typeof j.zeit === 'string' ? j.zeit : null;
+        renderStandLine();
+      });
+  }
+  function startStandLine() {
+    standEl = document.createElement('p');
+    standEl.className = 'stand-line';
+    standEl.setAttribute('role', 'status');
+    document.body.appendChild(standEl);
+    renderStandLine();
+    loadStandLine();
+    // Re-rendered every minute even without a new file: "ok" has to turn
+    // into the warning on its own once the Pi stops sending.
+    setInterval(function () {
+      if (document.hidden) return;
+      loadStandLine();
+    }, STAND_POLL_MS);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) loadStandLine();
+    });
+  }
+
   /* ---- Re-resolving the page in place ----
      Both switches used to reload. A reload re-rolls the collage's
      per-species pose (collagePose starts empty on a fresh document), and
@@ -630,6 +731,7 @@
   if (I18N && I18N.onChange) {
     I18N.onChange(function (what) {
       LANG = I18N.lang;
+      renderStandLine();
       VIEW_TITLES = resolveViewTitles();
       EMPTY_WINDOW_COPY = T('empty.window');
       if (staticTitle) staticTitle.textContent = VIEW_TITLES[currentView];
@@ -6365,6 +6467,8 @@
   // The first request decides whether this browser needs the station password.
   // Until it resolves, the drawer remains in its neutral locked state.
   function tryAutoUnlock() {
+    // The read-only copy has no menu.php to ask.
+    if (READ_ONLY) return;
     var probeGeneration = ++adminUnlockProbeGeneration;
     return fetch('./avian/api/menu.php', { credentials: 'same-origin' }).then(function (r) {
       if (probeGeneration !== adminUnlockProbeGeneration) return;
@@ -6385,7 +6489,7 @@
       }
     }).catch(function () { });
   }
-  tryAutoUnlock();
+  MODUS_READY.then(tryAutoUnlock);
 
   function adminPasswordBytes(value) {
     if (typeof value !== 'string' || /[\u0000-\u001f\u007f]/.test(value)

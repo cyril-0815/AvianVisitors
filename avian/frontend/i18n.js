@@ -74,6 +74,12 @@
     'title.avianAtlas': 'Avian Atlas',
     'empty.window': 'no detections heard in this window',
 
+    'stand.ok': 'Updated {when}',
+    'stand.stale': 'No connection since {when}',
+    'stand.stalePlace': '{place}: no connection since {when}',
+    'stand.none': 'No connection yet',
+    'stand.nonePlace': '{place}: no connection yet',
+
     'aria.birdCollage': 'Bird collage',
     'aria.stats': 'Stats',
     'aria.atlas': 'Atlas',
@@ -272,6 +278,12 @@
     'title.avianAtlas': 'Vogel-Atlas',
     'empty.window': 'keine Erkennungen in diesem Zeitraum',
 
+    'stand.ok': 'Stand: {when}',
+    'stand.stale': 'Keine Verbindung seit {when}',
+    'stand.stalePlace': '{place}: keine Verbindung seit {when}',
+    'stand.none': 'Noch keine Verbindung',
+    'stand.nonePlace': '{place}: noch keine Verbindung',
+
     'aria.birdCollage': 'Vogel-Collage',
     'aria.stats': 'Statistik',
     'aria.atlas': 'Atlas',
@@ -467,6 +479,12 @@
     'title.heardAll': 'Oiseaux entendus',
     'title.avianAtlas': 'Atlas des oiseaux',
     'empty.window': 'aucune détection sur cette période',
+
+    'stand.ok': 'État : {when}',
+    'stand.stale': 'Pas de connexion depuis {when}',
+    'stand.stalePlace': '{place} : pas de connexion depuis {when}',
+    'stand.none': 'Pas encore de connexion',
+    'stand.nonePlace': '{place} : pas encore de connexion',
 
     'aria.birdCollage': 'Collage d\'oiseaux',
     'aria.stats': 'Statistiques',
