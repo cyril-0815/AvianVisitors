@@ -66,7 +66,25 @@ check(!/\n  tryAutoUnlock\(\);\n/.test(apt), 'no probe fires before the mode is 
 check(apt.includes('menuShellEl.hidden = READ_ONLY;'), 'the menu comes back on the Pi once the mode is known');
 
 /* ---- nothing to play on the copy ---- */
-check(css.includes('.read-only .postcard-recordings { display: none; }'), 'the copy hides the recordings');
+check(/\.read-only \.postcard-recordings[,\s][^}]*display: none/.test(css), 'the copy hides the recordings');
 check(css.includes('.stand-line.stale'), 'a silent station is marked');
+
+/* ---- no English lead on the copy, Wikipedia in the page's language ---- */
+check(css.includes('.read-only #modalDesc { display: none; }'), 'the copy hides the description');
+check(apt.includes('if (READ_ONLY) return imageReady;'), 'the copy never asks wiki.php');
+const wikiFrom = apt.indexOf('var WIKI_LANGS');
+const wikiTo = apt.indexOf('function ebirdUrl');
+check(wikiFrom !== -1 && wikiTo > wikiFrom, 'apt.js still has WIKI_LANGS and wikiUrl in one piece');
+function wikiFor(lang) {
+  const box = { LANG: lang };
+  vm.runInNewContext(apt.slice(wikiFrom, wikiTo) + '\nthis.url = wikiUrl("Garrulus glandarius");', box);
+  return box.url;
+}
+check(wikiFor('de') === 'https://de.wikipedia.org/w/index.php?go=Go&search=Garrulus%20glandarius',
+  'a German page links to the German Wikipedia');
+check(wikiFor('fr').startsWith('https://fr.wikipedia.org/'), 'a French page links to the French Wikipedia');
+check(wikiFor('en').startsWith('https://en.wikipedia.org/'), 'an English page keeps the English Wikipedia');
+check(wikiFor('xx').startsWith('https://en.wikipedia.org/'), 'an unknown language falls back to English');
+check(apt.includes("if (LANG === 'en' && j.source"), "the English lead's article link only replaces an English link");
 
 process.stdout.write('read-only copy: ' + checks + ' checks passed\n');

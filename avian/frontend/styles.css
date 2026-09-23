@@ -236,7 +236,8 @@
 
   /* Read-only copy (modus.json, see apt.js): no players, because there
      are no recordings to play, and the stand line where the menu was. */
-  .read-only .postcard-recordings { display: none; }
+  .read-only .postcard-recordings,
+  .read-only #modalDesc { display: none; }
   .stand-line {
     position: fixed; top: 30px; right: 28px; z-index: 31;
     margin: 0; max-width: 45vw;
