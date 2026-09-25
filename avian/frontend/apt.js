@@ -3333,7 +3333,20 @@
   }
   function fetchJson(url) {
     return fetch(withLang(url), { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+      .then(function (r) {
+        if (!r.ok) reloadIfSignedOut(r.status);
+        return r.ok ? r.json() : Promise.reject(r.status);
+      });
+  }
+  // Behind the portal on the read-only copy, 401 and 403 mean the
+  // sign-in ran out or access was taken away. Reloading the page hands
+  // the visitor back to the portal, which sends them to its login. Once
+  // per page, so a stubborn answer cannot turn into a reload loop.
+  var reloadingForSignIn = false;
+  function reloadIfSignedOut(status) {
+    if (!READ_ONLY || reloadingForSignIn || (status !== 401 && status !== 403)) return;
+    reloadingForSignIn = true;
+    location.reload();
   }
 
   function backfillDaily(daily, days) {
