@@ -51,6 +51,7 @@ link_avian_visitors_webroot() {
   sources=(
     "${repo_dir}/avian"
     "${frontend_dir}/index.html"
+    "${frontend_dir}/boot.js"
     "${frontend_dir}/styles.css"
     "${frontend_dir}/i18n.js"
     "${frontend_dir}/apt.js"
@@ -78,6 +79,7 @@ link_avian_visitors_webroot() {
   targets=(
     "avian"
     "index.html"
+    "boot.js"
     "styles.css"
     "i18n.js"
     "apt.js"

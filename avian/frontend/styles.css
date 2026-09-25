@@ -233,6 +233,8 @@
      them sets its own display, which plain [hidden] cannot beat. All
      three are position:fixed, so nothing reflows when they leave. */
   .top[hidden], .menu-shell[hidden], .slider[hidden] { display: none; }
+  /* The SVG that only carries filter definitions takes no room. */
+  .svg-defs { position: absolute; pointer-events: none; }
 
   /* Read-only copy (modus.json, see apt.js): no players, because there
      are no recordings to play, and the stand line where the menu was. */
