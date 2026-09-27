@@ -67,10 +67,8 @@ from pathlib import Path
 
 MAIN_SCRIPT_DIR = Path(__file__).resolve().parent
 MAIN_REPO_ROOT = MAIN_SCRIPT_DIR.parent.parent
-# Bewusst ausserhalb von OneDrive (ausserhalb von MAIN_REPO_ROOT), im System-
-# Temp-Ordner: dein Hauptordner liegt unter OneDrive-Sync, und Git-Operationen
-# dort koennen haengen bleiben, weil OneDrive Dateien im .git-Ordner sperrt
-# (bereits einmal aufgetreten). Ausserhalb von OneDrive passiert das nicht.
+# Die Worktrees liegen im System-Temp-Ordner, ausserhalb von MAIN_REPO_ROOT,
+# damit sie nie mit dem normalen Arbeitsordner in Beruehrung kommen.
 WORKTREES_PARENT = Path(tempfile.gettempdir()) / f"{MAIN_REPO_ROOT.name}-worktrees"
 DEFAULT_MAIN_BRANCH = "avian-visitors"
 
@@ -384,7 +382,7 @@ def main():
                 print()
                 if merged:
                     print(f"'{args.main_branch}' ist aktuell. 'git pull' auf dem Pi machst du wie gewohnt von Hand,")
-                    print("danach im Browser Strg+Umschalt+R (Hard-Reload) nicht vergessen.")
+                    print("Ein Hard-Reload im Browser ist nicht noetig, die Versionsnummern sind hochgezaehlt.")
                 else:
                     print(f"Der Feature-Branch '{branch}' ist im Fork, aber noch NICHT in '{args.main_branch}' gemergt.")
                     print("Bitte den Merge von Hand nachholen (siehe Meldung oben), erst danach lohnt sich 'git pull' auf dem Pi.")

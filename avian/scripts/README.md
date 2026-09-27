@@ -37,6 +37,25 @@ directly). `--ebird-region` filters to species actually seen in your region
 (needs `EBIRD_API_KEY`). Re-render one bird with
 `--species "Calypte anna|Anna's Hummingbird" --force`.
 
+## Adding a few species in one go
+
+`new_species.py` runs steps 1-3 for a handful of species and bumps every
+version the display needs: `SKETCH_VERSION`, `IMG_VERSION` and
+`TABLE_VERSION` in `apt.js`, plus `apt.js?v=` in `index.html` (a kiosk
+without a keyboard can't hard-reload). It works in its own git worktree in
+the system temp folder, so the normal checkout is never touched.
+
+```bash
+python new_species.py "Sitta europaea|Eurasian Nuthatch"
+python new_species.py --file species.txt            # one Sci|Com per line
+python new_species.py --file species.txt --deploy   # also commit, push, merge
+```
+
+Without `--deploy` the worktree stays for review and its path is printed.
+With `--deploy` it pushes a `new-species/...` branch and merges it into
+`avian-visitors`. It never touches the Pi: run `git pull` there yourself.
+Look at every image before deploying; the model does confuse look-alikes.
+
 ## Why a cream ground
 
 The image model can't cut a clean transparent background on its own: it
