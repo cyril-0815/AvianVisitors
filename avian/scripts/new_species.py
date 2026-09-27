@@ -6,7 +6,9 @@ Automatisiert den kompletten Ablauf fuer eine oder mehrere neue Vogelarten:
   1) pregen.py       - Illustrationen via Gemini generieren (sitzend + fliegend)
   2) cutout.py        - Hintergrund entfernen / freistellen
   3) build_masks.py   - dims.json + masks.json neu bauen
-  4) apt.js            - SKETCH_VERSION und IMG_VERSION automatisch hochzaehlen
+  4) apt.js            - SKETCH_VERSION und IMG_VERSION automatisch hochzaehlen,
+                         dazu TABLE_VERSION, weil sich dims.json/masks.json
+                         geaendert haben
   5) index.html        - apt.js?v=rNNN hochzaehlen, damit auch der Anzeige-Pi
                          (ohne Tastatur, kein Hard-Reload moeglich) das neue
                          apt.js und damit die neuen Arten laedt
@@ -180,6 +182,20 @@ def bump_apt_js(apt_js_path, species_done):
     return new
 
 
+def bump_table_version(apt_js_path):
+    """Zaehlt TABLE_VERSION in apt.js hoch. Damit holt der Browser die neuen
+    dims.json/masks.json statt der alten Umrisse aus dem Cache."""
+    text = apt_js_path.read_text(encoding="utf-8")
+    m = re.search(r"var TABLE_VERSION = 'r(\d+)';", text)
+    if not m:
+        print("  [warn] TABLE_VERSION nicht gefunden, ueberspringe.")
+        return None
+    new = int(m.group(1)) + 1
+    text = text[:m.start()] + f"var TABLE_VERSION = 'r{new}';" + text[m.end():]
+    apt_js_path.write_text(text, encoding="utf-8")
+    return new
+
+
 def bump_index_html(index_path):
     """Zaehlt die Cache-Nummer von apt.js in index.html hoch (apt.js?v=rNNN)."""
     text = index_path.read_text(encoding="utf-8")
@@ -334,6 +350,9 @@ def main():
         new_version = bump_apt_js(apt_js, done)
         if new_version:
             print(f"  apt.js: SKETCH_VERSION/IMG_VERSION -> r{new_version}")
+        table_version = bump_table_version(apt_js)
+        if table_version:
+            print(f"  apt.js: TABLE_VERSION -> r{table_version}")
         index_version = bump_index_html(index_html)
         if index_version:
             print(f"  index.html: apt.js?v= -> r{index_version}")
