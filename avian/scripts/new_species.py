@@ -7,6 +7,9 @@ Automatisiert den kompletten Ablauf fuer eine oder mehrere neue Vogelarten:
   2) cutout.py        - Hintergrund entfernen / freistellen
   3) build_masks.py   - dims.json + masks.json neu bauen
   4) apt.js            - SKETCH_VERSION und IMG_VERSION automatisch hochzaehlen
+  5) index.html        - apt.js?v=rNNN hochzaehlen, damit auch der Anzeige-Pi
+                         (ohne Tastatur, kein Hard-Reload moeglich) das neue
+                         apt.js und damit die neuen Arten laedt
 
 Voraussetzung: GEMINI_API_KEY muss in dieser Shell bereits gesetzt sein
 (z.B. mit  set GEMINI_API_KEY=dein-key  in cmd.exe), genau wie beim manuellen
@@ -177,6 +180,19 @@ def bump_apt_js(apt_js_path, species_done):
     return new
 
 
+def bump_index_html(index_path):
+    """Zaehlt die Cache-Nummer von apt.js in index.html hoch (apt.js?v=rNNN)."""
+    text = index_path.read_text(encoding="utf-8")
+    m = re.search(r"apt\.js\?v=r(\d+)", text)
+    if not m:
+        print("  [warn] apt.js?v= in index.html nicht gefunden, ueberspringe.")
+        return None
+    new = int(m.group(1)) + 1
+    text = text[:m.start()] + f"apt.js?v=r{new}" + text[m.end():]
+    index_path.write_bytes(text.encode("utf-8"))
+    return new
+
+
 def commit_and_push(worktree_path, branch, paths_to_commit, species_done):
     names = ", ".join(com for _, com in species_done)
     abs_paths = [str(p) for p in paths_to_commit if p.exists()]
@@ -284,6 +300,7 @@ def main():
     frontend_dir = worktree_path / "avian" / "frontend"
     illustrations_dir = worktree_path / "avian" / "assets" / "illustrations"
     apt_js = frontend_dir / "apt.js"
+    index_html = frontend_dir / "index.html"
 
     done = []
     failed = []
@@ -317,6 +334,9 @@ def main():
         new_version = bump_apt_js(apt_js, done)
         if new_version:
             print(f"  apt.js: SKETCH_VERSION/IMG_VERSION -> r{new_version}")
+        index_version = bump_index_html(index_html)
+        if index_version:
+            print(f"  index.html: apt.js?v= -> r{index_version}")
         print()
 
         print("=== Fertig ===")
@@ -325,7 +345,7 @@ def main():
             print(f"Fehlgeschlagen: {len(failed)} ({', '.join(failed)}) - kannst du einfach nochmal einzeln aufrufen.")
         print()
 
-        paths_to_commit = [apt_js, frontend_dir / "dims.json", frontend_dir / "masks.json"]
+        paths_to_commit = [apt_js, index_html, frontend_dir / "dims.json", frontend_dir / "masks.json"]
         for sci, com in done:
             slug = slugify(sci)
             for suffix in ("", "-2"):
