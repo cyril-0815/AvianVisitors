@@ -2,7 +2,7 @@
 'use strict';
 
 /* The page must also run under a strict Content-Security-Policy without
-   'unsafe-inline', the way a copy behind a login portal is
+   'unsafe-inline', the way a copy behind a sign-in can be
    served. Two rules follow from that for index.html: no code in the
    page itself, and no style="..." in its markup. Styles that the
    scripts build as HTML strings are re-applied by boot.js, which is why

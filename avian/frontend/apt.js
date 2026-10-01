@@ -614,7 +614,8 @@
      the menu or the players. It says so with a modus.json next to
      index.html:
 
-       { "modus": "nurlesen", "ort": "Name of the station" }
+       { "modus": "nurlesen", "ort": "Name of the station",
+         "zurueck": { "href": "/", "text": { "de": "...", "fr": "...", "en": "..." } } }
 
      The Pi has no such file: the request fails and nothing changes
      there. The menu stays hidden until the answer is in, so the copy
@@ -623,6 +624,18 @@
      last heard from, see the stand line further down. */
   var READ_ONLY = false;
   var READ_ONLY_PLACE = '';
+  var READ_ONLY_BACK = null;
+  // "zurueck" is optional: a link out of the copy, to wherever the copy is
+  // embedded. Only a path on this same site is accepted - no other site,
+  // no javascript: - and the text comes per language, English as fallback.
+  // >>> back-link
+  function readBackLink(z) {
+    if (!z || typeof z.href !== 'string' || !/^\/(?!\/)[^\s\\]*$/.test(z.href)) return null;
+    var text = typeof z.text === 'string' ? { en: z.text } : z.text;
+    if (!text || typeof text !== 'object') return null;
+    return { href: z.href, text: text };
+  }
+  // <<< back-link
   var menuShellEl = document.getElementById('menuShell');
   if (menuShellEl && !CHROME_OFF) menuShellEl.hidden = true;
   var MODUS_READY = fetch('./modus.json', { cache: 'no-store' })
@@ -631,6 +644,7 @@
     .then(function (j) {
       READ_ONLY = !!j && j.modus === 'nurlesen';
       READ_ONLY_PLACE = READ_ONLY && typeof j.ort === 'string' ? j.ort.trim().slice(0, 40) : '';
+      READ_ONLY_BACK = READ_ONLY ? readBackLink(j.zurueck) : null;
       document.documentElement.classList.toggle('read-only', READ_ONLY);
       if (menuShellEl && !CHROME_OFF) menuShellEl.hidden = READ_ONLY;
       if (READ_ONLY) startStandLine();
@@ -659,6 +673,7 @@
   var STAND_POLL_MS = 60 * 1000;
   var standZeit = null;
   var standEl = null;
+  var backEl = null;
   function standWhen(ms) {
     try {
       return new Date(ms).toLocaleString(TLOC(), {
@@ -667,6 +682,11 @@
     } catch (e) { return new Date(ms).toISOString().slice(0, 16).replace('T', ' '); }
   }
   function renderStandLine() {
+    if (backEl) {
+      var t = READ_ONLY_BACK.text;
+      var first = Object.keys(t).map(function (k) { return t[k]; })[0];
+      backEl.textContent = String(t[LANG] || t.en || first || '').slice(0, 40);
+    }
     if (!standEl) return;
     var state = standState(standZeit, Date.now());
     var place = READ_ONLY_PLACE;
@@ -691,6 +711,14 @@
       });
   }
   function startStandLine() {
+    // The copy has no menu. If modus.json names a way back out, it sits in
+    // the menu's corner, above the stand line.
+    if (READ_ONLY_BACK) {
+      backEl = document.createElement('a');
+      backEl.className = 'back-link';
+      backEl.href = READ_ONLY_BACK.href;
+      document.body.appendChild(backEl);
+    }
     standEl = document.createElement('p');
     standEl.className = 'stand-line';
     standEl.setAttribute('role', 'status');
@@ -3338,9 +3366,9 @@
         return r.ok ? r.json() : Promise.reject(r.status);
       });
   }
-  // Behind the portal on the read-only copy, 401 and 403 mean the
-  // sign-in ran out or access was taken away. Reloading the page hands
-  // the visitor back to the portal, which sends them to its login. Once
+  // On a read-only copy behind a sign-in, 401 and 403 mean the sign-in
+  // ran out or access was taken away. Reloading the page hands the
+  // visitor back to whatever guards the copy, which asks again. Once
   // per page, so a stubborn answer cannot turn into a reload loop.
   var reloadingForSignIn = false;
   function reloadIfSignedOut(status) {
