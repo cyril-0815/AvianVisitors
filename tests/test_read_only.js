@@ -87,4 +87,24 @@ check(wikiFor('en').startsWith('https://en.wikipedia.org/'), 'an English page ke
 check(wikiFor('xx').startsWith('https://en.wikipedia.org/'), 'an unknown language falls back to English');
 check(apt.includes("if (LANG === 'en' && j.source"), "the English lead's article link only replaces an English link");
 
+/* ---- an optional way back out, set by modus.json ---- */
+const backFrom = apt.indexOf('// >>> back-link');
+const backTo = apt.indexOf('// <<< back-link');
+check(backFrom !== -1 && backTo > backFrom, 'apt.js still fences readBackLink with // >>> back-link / // <<< back-link');
+const backBox = {};
+vm.runInNewContext(apt.slice(backFrom, backTo) + '\nthis.readBackLink = readBackLink;', backBox);
+const back = backBox.readBackLink;
+check(back({ href: '/', text: { de: 'x' } }).href === '/', 'a path on the same site is accepted');
+check(back({ href: '/a/b', text: 'x' }).text.en === 'x', 'a plain text counts as English');
+check(back({ href: '//elsewhere.example/', text: 'x' }) === null, 'no other site');
+check(back({ href: 'https://elsewhere.example/', text: 'x' }) === null, 'no full address');
+check(back({ href: 'javascript:alert(1)', text: 'x' }) === null, 'no javascript:');
+check(back({ href: '/\\elsewhere', text: 'x' }) === null, 'no backslash tricks');
+check(back({ href: '/', text: 5 }) === null, 'text must be text');
+check(back(null) === null && back({}) === null, 'without zurueck there is no link');
+check(apt.includes('READ_ONLY_BACK = READ_ONLY ? readBackLink(j.zurueck) : null;'), 'only the copy reads zurueck');
+check(apt.includes('if (READ_ONLY_BACK) {'), 'the link only appears when modus.json asks for it');
+check(!/backEl\.href = '/.test(apt) && apt.includes('backEl.href = READ_ONLY_BACK.href;'),
+  'where the link leads comes from modus.json, never from the frontend');
+
 process.stdout.write('read-only copy: ' + checks + ' checks passed\n');
