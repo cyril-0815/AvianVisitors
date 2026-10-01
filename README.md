@@ -127,6 +127,38 @@ See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
 - **Home Assistant REST sensor** that exposes the latest detection.
 - **MQTT bridge** that publishes every new detection.
 
+### Read-only copy on another server
+
+The frontend can also run as a read-only copy away from the Pi, fed with a
+copy of `birds.db` that the Pi pushes. It switches into that mode when a
+`modus.json` sits next to `index.html`; the Pi itself has none and behaves as
+always.
+
+```json
+{
+  "modus": "nurlesen",
+  "ort": "Name of the station",
+  "zurueck": { "href": "/", "text": { "de": "…", "fr": "…", "en": "…" } }
+}
+```
+
+- **No menu, no recordings, no Wikipedia lead.** The copy never asks the admin
+  endpoints, the postcard drops its recordings and its English description;
+  the Wikipedia link stays, in the page's language.
+- **Stand line** where the menu would be: when the station was last heard
+  from, read from a `lebenszeichen.json` (`{ "zeit": "<ISO 8601, UTC>" }`) the
+  Pi sends with every push. After 30 minutes of silence it turns into a
+  warning naming `ort`.
+- **`zurueck`** is optional: a link out of the copy, above the stand line. Only
+  a path on the same site is accepted.
+- An expired sign-in in front of the copy (401 or 403 from the API) reloads the
+  page once.
+
+The page also runs under a strict Content-Security-Policy without
+`'unsafe-inline'`: `boot.js`, the first script on the page, re-applies the
+inline styles the collage builds through the CSSOM and stays idle where the
+browser allows them, as on the Pi.
+
 ---
 
 ## Repo layout
